@@ -6,10 +6,13 @@ Everything lives in your vault as plain Markdown files.
 
 **Website and documentation: https://inventtasks.solidinvent.pl**
 
-This repository exists to distribute the plugin. **InventTasks is not open
-source** — the source lives in a private repository, and only the built plugin
-is published here, under the [EULA](LICENSE). The same files are also available
-directly from the website.
+This repository holds the plugin's source code and its releases. **InventTasks
+is source-available, not open source**: you can read the code, audit what it
+does and build it for your own use, under the [EULA](LICENSE). Each release
+adds one commit with the source it was built from. The same plugin files are
+also available directly from the website.
+
+Building from source: `npm ci && npm run build` produces `main.js`.
 
 ## Install
 

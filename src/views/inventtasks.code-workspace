@@ -1,0 +1,18 @@
+{
+	"folders": [
+		{
+			"path": "../.."
+		}
+	],
+	"settings": {
+		"sqltools.useNodeRuntime": true,
+		"sqltools.connections": [
+			{
+				"previewLimit": 50,
+				"driver": "SQLite",
+				"name": "inventtasks-sqlite",
+				"database": "server/data/sync.db"
+			}
+		]
+	}
+}

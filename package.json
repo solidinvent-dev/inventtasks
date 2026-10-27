@@ -1,0 +1,22 @@
+{
+  "name": "inventtasks",
+  "version": "1.2.0",
+  "description": "Task management powered by Markdown files in your vault. Spaces, Lists, statuses, priorities, custom fields, multiple views.",
+  "private": true,
+  "license": "SEE LICENSE IN LICENSE",
+  "scripts": {
+    "dev": "node esbuild.config.mjs",
+    "build": "tsc -noEmit -skipLibCheck && node esbuild.config.mjs production"
+  },
+  "dependencies": {
+    "@noble/curves": "^1.9.7"
+  },
+  "devDependencies": {
+    "@types/node": "^16.18.108",
+    "builtin-modules": "3.3.0",
+    "esbuild": "0.28.1",
+    "obsidian": "1.5.7",
+    "tslib": "2.6.2",
+    "typescript": "5.3.3"
+  }
+}

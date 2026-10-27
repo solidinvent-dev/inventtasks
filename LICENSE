@@ -12,6 +12,12 @@ By installing or using InventTasks (the "Software") you agree to this Agreement.
       ("lifetime"), non-exclusive, non-transferable license to use the Software
       without the capacity limits, activated with the license key issued to
       your email address. One license covers your own personal use.
+   c) Source code. The source code of the Software is published so that you
+      can read and audit what it does, and build it for your own use. It is
+      source-available, not open source: building it yourself does not change
+      the terms of this Agreement. The capacity limits apply unless you hold a
+      paid license, and every restriction in section 2 applies to the source
+      code exactly as it does to the built plugin.
 
 2. RESTRICTIONS
    You may not, and may not permit others to:
@@ -20,6 +26,8 @@ By installing or using InventTasks (the "Software") you agree to this Agreement.
    - share, leak or publish a license key, or use a key issued to someone else;
    - circumvent, disable, remove or tamper with the licensing, activation or
      capacity-limit mechanisms, or assist anyone in doing so;
+   - publish, distribute or offer a modified version of the Software, or any
+     work built from its source code;
    - remove or alter any copyright, trademark or other proprietary notices.
 
    If a license key (with its email) is shared, leaked, published or otherwise
