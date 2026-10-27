@@ -75,7 +75,8 @@ Prices are on the website.
     license is still valid. It sends the license email encrypted to
     SolidInvent's key and a proof derived from the key, never the key itself
     and never vault content. This is how a refunded or leaked license is
-    revoked. If the endpoint cannot be reached, the plugin keeps working.
+    revoked. Being offline never suspends a license: when you are back
+    online, one check runs, however long you were away.
   - **Sync server and Vault sync** — only if you configure them; they connect
     to the server *you* run.
   - **CalDAV calendar sync** — only if you enable it; it connects to the
