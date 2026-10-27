@@ -6,6 +6,16 @@ Everything lives in your vault as plain Markdown files.
 
 **Website and documentation: https://inventtasks.solidinvent.pl**
 
+![InventTasks Board view: tasks in To Do, In Progress and No status columns, with priorities, due dates and tags](images/board.jpg)
+
+| List | Gantt |
+| --- | --- |
+| ![List view](images/list.jpg) | ![Gantt view](images/gantt.jpg) |
+| **Calendar** | **Item** |
+| ![Calendar view](images/calendar.jpg) | ![Item editor](images/item.jpg) |
+
+![InventTasks on Obsidian mobile](images/mobile.jpg)
+
 This repository holds the plugin's source code and its releases. **InventTasks
 is source-available, not open source**: you can read the code, audit what it
 does and build it for your own use, under the [EULA](LICENSE). Each release
