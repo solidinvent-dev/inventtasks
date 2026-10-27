@@ -4,6 +4,7 @@ import { VIEW_TYPE_INVENTTASKS_SIDEBAR } from "../constants";
 import { ContextLocation } from "../types";
 import { renderSidebar } from "./sidebar";
 import { t } from "../i18n";
+import { fireAndForget } from "../utils/async";
 
 export class InventTasksSidebarView extends ItemView {
   plugin: InventTasksPlugin;
@@ -36,7 +37,7 @@ export class InventTasksSidebarView extends ItemView {
   }
 
   private isViewVisible(): boolean {
-    return (this.containerEl as any).isShown?.() ?? true;
+    return (this.containerEl as HTMLElement & { isShown?: () => boolean }).isShown?.() ?? true;
   }
 
   // Hidden docks defer to the next reveal (Obsidian calls onResize then).
@@ -74,7 +75,7 @@ export class InventTasksSidebarView extends ItemView {
       }
       // Preserve scroll so selecting / toggling deep in the tree doesn't jump
       // the docked navigator back to the top.
-      const prevWrapScroll = (container.querySelector(".it-sidebar-docked") as HTMLElement | null)?.scrollTop ?? 0;
+      const prevWrapScroll = container.querySelector<HTMLElement>(".it-sidebar-docked")?.scrollTop ?? 0;
       const prevContScroll = container.scrollTop;
       container.empty();
       const wrap = container.createDiv({ cls: "it-sidebar-docked" });
@@ -86,7 +87,7 @@ export class InventTasksSidebarView extends ItemView {
       renderSidebar(wrap, {
         plugin: this.plugin,
         current,
-        onSelect: async (loc) => {
+        onSelect: fireAndForget(async (loc) => {
           await this.plugin.activateView();
           const mv = this.plugin.getMainView();
           if (mv) {
@@ -94,17 +95,17 @@ export class InventTasksSidebarView extends ItemView {
           } else {
             this.render();
           }
-        },
-        onOpenView: async (v) => {
+        }),
+        onOpenView: fireAndForget(async (v) => {
           await this.plugin.activateView();
           const mv = this.plugin.getMainView();
           if (mv) mv.openSavedView(v);
           else this.render();
-        },
-        onOpenTask: async (id) => {
+        }),
+        onOpenTask: fireAndForget(async (id) => {
           await this.plugin.activateView();
           this.plugin.getMainView()?.openFavorite(id);
-        },
+        }),
         collapsedSet: collapsed,
         notificationsAttention: mainView?.notificationNeedsAttention() ?? false,
         remindersAttention: mainView?.remindersNeedAttention() ?? false,

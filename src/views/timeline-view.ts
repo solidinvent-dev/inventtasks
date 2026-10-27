@@ -1,7 +1,7 @@
 import { setIcon, Notice } from "obsidian";
 import type InventTasksPlugin from "../main";
 import { fieldLabelFrom, t as tr } from "../i18n";
-import { TaskFile } from "../types";
+import { TaskData, TaskFile } from "../types";
 import { ViewState } from "./main-view";
 import { groupTasks, GroupBucket } from "../data/filters";
 import { statusChip, priorityChip, tagChip, applyChipStyleByKind, chipKindForGroupBy, renderGroupHeaderChip, renderListReference } from "../ui/components";
@@ -11,10 +11,11 @@ import { renderIconish } from "../ui/icons";
 import { isDateSourceWritable, mapDatePatch } from "../data/date-source";
 import { DATE_SOURCE_DUE, DATE_SOURCE_START } from "../constants";
 import {
-  TimeViewContext, buildAxis, barGeom, BarGeom, resolveBarColor,
+  TimeViewContext, TimeScrollState, buildAxis, barGeom, BarGeom, resolveBarColor,
   renderTimeToolbar, renderTimeScaffold, scrollToKey, attachBarDrag, axisTitle,
   LANE_SUBROW_H, LANE_PAD, TIME_EDIT_ENABLED, TimeNavHandlers, ctxDateFields, DateFields,
 } from "./time-grid";
+import { fireAndForget } from "../utils/async";
 
 const RENDER_CHUNK_LANES = 24;
 
@@ -64,10 +65,10 @@ export function renderTimelineView(opts: TimelineRenderOpts) {
     tagsPalette: context.tagsPalette,
     contextLabels: context.contextLabels,
     customFields: context.customFields,
-    listMeta: (context as any).listMeta,
+    listMeta: context.listMeta,
     subtaskStats: context.subtaskStats,
     taskTitles: context.taskTitles,
-    fieldLabels: (context as any).fieldLabels,
+    fieldLabels: context.fieldLabels,
     direction: state.groupDirection,
   });
 
@@ -105,7 +106,7 @@ export function renderTimelineView(opts: TimelineRenderOpts) {
   const scaffold = renderTimeScaffold(parent, axis, {
     rail: true,
     bodyHeight,
-    railHeadLabel: railLabel(groupBy, (context as any).fieldLabels),
+    railHeadLabel: railLabel(groupBy, context.fieldLabels),
     railWidth: state.timelineRailWidth,
     onRailWidthChange: opts.onRailWidthChange,
   });
@@ -149,13 +150,13 @@ export function renderTimelineView(opts: TimelineRenderOpts) {
   // title rail scrolls with the canvas; desktop: same element as axisScroll).
   // Vertical scroll always lives on axisScroll.
   scaffold.hScroll.addEventListener("scroll", () => {
-    (state as any).__tgScrollLeft = scaffold.hScroll.scrollLeft;
+    (state as TimeScrollState).__tgScrollLeft = scaffold.hScroll.scrollLeft;
   });
   scaffold.axisScroll.addEventListener("scroll", () => {
-    (state as any).__tgScrollTop = scaffold.axisScroll.scrollTop;
+    (state as TimeScrollState).__tgScrollTop = scaffold.axisScroll.scrollTop;
   });
   window.requestAnimationFrame(() => {
-    const sl = (state as any).__tgScrollLeft, st = (state as any).__tgScrollTop;
+    const sl = (state as TimeScrollState).__tgScrollLeft, st = (state as TimeScrollState).__tgScrollTop;
     if (typeof sl === "number") scaffold.hScroll.scrollLeft = sl;
     else scrollToKey(scaffold, axis, anchor, "center");
     if (typeof st === "number") scaffold.axisScroll.scrollTop = st;
@@ -316,9 +317,9 @@ function attachBar(el: HTMLElement, t: TaskFile, geom: BarGeom, opts: TimelineRe
     geom,
     enabled: TIME_EDIT_ENABLED && writable,
     onClick: () => opts.onTaskClick(t),
-    onCommit: async (patch, ev) => {
-      const canvas = el.closest(".it-tg-canvas") as HTMLElement | null;
-      let lanePatch: any = {};
+    onCommit: fireAndForget(async (patch, ev) => {
+      const canvas = el.closest<HTMLElement>(".it-tg-canvas");
+      let lanePatch: Record<string, unknown> = {};
       // Lane reassignment is only safe for single-valued axes. Multi-valued
       // (tags/context/custom field) or structural ("list") grouping would
       // overwrite/relocate destructively, so dragging only reschedules there.
@@ -332,9 +333,9 @@ function attachBar(el: HTMLElement, t: TaskFile, geom: BarGeom, opts: TimelineRe
         }
       }
       try {
-        await opts.plugin.index.updateTask(t.data.id, (d) => ({ data: { ...d, ...mapDatePatch(d, patch, fields.start, fields.due), ...lanePatch } }));
-      } catch (err: any) { new Notice(tr("common.failed", { msg: err.message })); }
-    },
+        await opts.plugin.index.updateTask(t.data.id, (d: TaskData) => ({ data: { ...d, ...mapDatePatch(d, patch, fields.start, fields.due), ...lanePatch } }));
+      } catch (err) { new Notice(tr("common.failed", { msg: (err as Error).message })); }
+    }),
   });
 }
 
@@ -352,10 +353,10 @@ function renderUnscheduledTray(parent: HTMLElement, tasks: TaskFile[], opts: Tim
     if (TIME_EDIT_ENABLED && isDateSourceWritable(fields.due, DATE_SOURCE_DUE)) {
       const icon = chip.createSpan({ cls: "it-tg-schedule-icon", attr: { title: tr("gantt.setDueToday") } });
       setIcon(icon, "calendar-clock");
-      icon.addEventListener("click", async (e) => {
+      icon.addEventListener("click", fireAndForget(async (e) => {
         e.stopPropagation();
-        await opts.plugin.index.updateTask(t.data.id, (d) => ({ data: { ...d, ...mapDatePatch(d, { due_date: todayKey() }, fields.start, fields.due) } }));
-      });
+        await opts.plugin.index.updateTask(t.data.id, (d: TaskData) => ({ data: { ...d, ...mapDatePatch(d, { due_date: todayKey() }, fields.start, fields.due) } }));
+      }));
     }
     chip.addEventListener("click", () => opts.onTaskClick(t));
   }
@@ -373,7 +374,7 @@ function currentLaneKey(t: TaskFile, groupBy: string): string {
   return "__multi__";
 }
 
-function groupPatch(groupBy: string, bucketKey: string): any {
+function groupPatch(groupBy: string, bucketKey: string): Record<string, unknown> {
   if (groupBy === "status") return bucketKey === "__no_status" ? { status: null } : { status: bucketKey };
   if (groupBy === "priority") {
     if (bucketKey === "__no_priority") return { priority: null };

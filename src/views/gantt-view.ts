@@ -1,7 +1,7 @@
 import { setIcon, Notice } from "obsidian";
 import type InventTasksPlugin from "../main";
 import { t as tr } from "../i18n";
-import { TaskFile } from "../types";
+import { TaskData, TaskFile } from "../types";
 import { ViewState } from "./main-view";
 import { groupTasks, GroupBucket } from "../data/filters";
 import { buildSubtaskTree, flattenSubtaskRows, maxSubtaskDepth } from "../data/subtasks";
@@ -13,10 +13,11 @@ import { formatDuration, isOverdue, todayKey } from "../utils/dates";
 import { taskDateValue, isDateSourceWritable, mapDatePatch } from "../data/date-source";
 import { DATE_SOURCE_DUE, DATE_SOURCE_START } from "../constants";
 import {
-  TimeViewContext, buildAxis, barGeom, BarGeom, resolveBarColor, taskProgress,
+  TimeViewContext, TimeScrollState, buildAxis, barGeom, BarGeom, resolveBarColor, taskProgress,
   renderTimeToolbar, renderTimeScaffold, scrollToKey, attachBarDrag, axisTitle,
   ROW_H, TIME_EDIT_ENABLED, TimeNavHandlers, ctxDateFields,
 } from "./time-grid";
+import { fireAndForget } from "../utils/async";
 
 const RENDER_CHUNK_ROWS = 80;
 
@@ -134,13 +135,13 @@ export function renderGanttView(opts: GanttRenderOpts) {
   // title rail scrolls with the canvas; desktop: same element as axisScroll).
   // Vertical scroll always lives on axisScroll.
   scaffold.hScroll.addEventListener("scroll", () => {
-    (state as any).__tgScrollLeft = scaffold.hScroll.scrollLeft;
+    (state as TimeScrollState).__tgScrollLeft = scaffold.hScroll.scrollLeft;
   });
   scaffold.axisScroll.addEventListener("scroll", () => {
-    (state as any).__tgScrollTop = scaffold.axisScroll.scrollTop;
+    (state as TimeScrollState).__tgScrollTop = scaffold.axisScroll.scrollTop;
   });
   window.requestAnimationFrame(() => {
-    const sl = (state as any).__tgScrollLeft, st = (state as any).__tgScrollTop;
+    const sl = (state as TimeScrollState).__tgScrollLeft, st = (state as TimeScrollState).__tgScrollTop;
     if (typeof sl === "number") scaffold.hScroll.scrollLeft = sl;
     else scrollToKey(scaffold, axis, anchor, "center");
     if (typeof st === "number") scaffold.axisScroll.scrollTop = st;
@@ -164,10 +165,10 @@ function buildRows(tasks: TaskFile[], state: ViewState, context: TimeViewContext
       tagsPalette: context.tagsPalette,
       contextLabels: context.contextLabels,
       customFields: context.customFields,
-      listMeta: (context as any).listMeta,
+      listMeta: context.listMeta,
       subtaskStats: context.subtaskStats,
       taskTitles: context.taskTitles,
-      fieldLabels: (context as any).fieldLabels,
+      fieldLabels: context.fieldLabels,
       direction: state.groupDirection,
     });
     const rows: Row[] = [];
@@ -207,7 +208,7 @@ function renderRailTask(rail: HTMLElement, t: TaskFile, depth: number, opts: Gan
   if (context.visibleFields.includes("type_icon")) {
     const ttype = context.taskTypesOrder.find((x) => x.id === t.data.type);
     const wrap = row.createSpan({ cls: "it-tg-rail-type" });
-    const ic = renderIconish(wrap, (ttype as any)?.icon || typeEmoji(t.data.type), { cls: "it-tg-rail-type-icon" });
+    const ic = renderIconish(wrap, ttype?.icon || typeEmoji(t.data.type), { cls: "it-tg-rail-type-icon" });
     if (ic && ttype?.color) ic.style.color = ttype.color;
   }
   if (context.visibleFields.includes("custom_id") && t.data.custom_id) row.createSpan({ cls: "it-tg-rail-id", text: t.data.custom_id });
@@ -248,10 +249,10 @@ function renderRailTask(rail: HTMLElement, t: TaskFile, depth: number, opts: Gan
     if (TIME_EDIT_ENABLED && isDateSourceWritable(fields.due, DATE_SOURCE_DUE)) {
       const icon = row.createSpan({ cls: "it-tg-schedule-icon", attr: { title: tr("gantt.setDueToday") } });
       setIcon(icon, "calendar-clock");
-      icon.addEventListener("click", async (e) => {
+      icon.addEventListener("click", fireAndForget(async (e) => {
         e.stopPropagation();
-        await opts.plugin.index.updateTask(t.data.id, (d) => ({ data: { ...d, ...mapDatePatch(d, { due_date: todayKey() }, fields.start, fields.due) } }));
-      });
+        await opts.plugin.index.updateTask(t.data.id, (d: TaskData) => ({ data: { ...d, ...mapDatePatch(d, { due_date: todayKey() }, fields.start, fields.due) } }));
+      }));
     } else {
       row.createSpan({ cls: "it-tg-rail-unscheduled", text: "—" });
     }
@@ -366,11 +367,11 @@ function commitDrag(el: HTMLElement, t: TaskFile, geom: BarGeom, axis: ReturnTyp
   attachBarDrag(el, {
     axis, geom, enabled: TIME_EDIT_ENABLED && writable,
     onClick: () => opts.onTaskClick(t),
-    onCommit: async (patch) => {
+    onCommit: fireAndForget(async (patch) => {
       try {
-        await opts.plugin.index.updateTask(t.data.id, (d) => ({ data: { ...d, ...mapDatePatch(d, patch, fields.start, fields.due) } }));
-      } catch (err: any) { new Notice(tr("gantt.rescheduleFailed", { msg: err.message })); }
-    },
+        await opts.plugin.index.updateTask(t.data.id, (d: TaskData) => ({ data: { ...d, ...mapDatePatch(d, patch, fields.start, fields.due) } }));
+      } catch (err) { new Notice(tr("gantt.rescheduleFailed", { msg: (err as Error).message })); }
+    }),
   });
 }
 

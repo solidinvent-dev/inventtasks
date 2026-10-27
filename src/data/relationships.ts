@@ -13,7 +13,7 @@
 // All writes go through `updateTask`, which is a single-file atomic write
 // with optimistic in-memory update + emit. No more mirror batching.
 
-import type { TaskFile } from "../types";
+import type { TaskData, TaskFile } from "../types";
 import type { WorkspaceIndex } from "./workspace-index";
 import { appendActivity } from "./activity";
 
@@ -55,14 +55,14 @@ async function setBucket(
   mutate: (current: string[]) => string[] | undefined,
   activityEntry?: Parameters<typeof appendActivity>[1],
 ): Promise<void> {
-  await idx.updateTask(taskId, (d) => {
+  await idx.updateTask(taskId, (d: TaskData) => {
     const cur = d.relationships?.[key] ?? [];
     const next = mutate(cur);
     if (next === undefined) return; // mutator signaled no-op
     const rels = { ...(d.relationships || {}) };
     if (next.length === 0) delete rels[key];
     else rels[key] = next;
-    const out: any = { ...d, relationships: rels };
+    const out: TaskData = { ...d, relationships: rels };
     if (activityEntry) out.activity = appendActivity(d.activity, activityEntry);
     return { data: out };
   });
@@ -77,7 +77,7 @@ async function logOnly(
   taskId: string,
   entry: Parameters<typeof appendActivity>[1],
 ): Promise<void> {
-  await idx.updateTask(taskId, (d) => ({
+  await idx.updateTask(taskId, (d: TaskData) => ({
     data: { ...d, activity: appendActivity(d.activity, entry) },
   }));
 }

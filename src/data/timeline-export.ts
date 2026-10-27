@@ -79,6 +79,8 @@ function themeColors(theme: TimeExportTheme): { bg: string; surface: string; tex
 interface Placed { task: TaskFile; geom: BarGeom; row: number }
 interface LaneOut { label: string; color?: string; top: number; height: number; placed: Placed[] }
 interface ExportLabel { text: string; color?: string }
+/** The caller's context may carry per-location field-label overrides. */
+type TimeViewContextWithLabels = TimeViewContext & { fieldLabels?: Record<string, string> };
 interface UnscheduledOut { top: number; height: number; tasks: TaskFile[] }
 
 export function defaultTimeExportRange(tasks: TaskFile[], fields?: DateFields): { dateFrom: string; dateTo: string } {
@@ -134,7 +136,7 @@ function groupContextFrom(input: TimeExportInput): GroupContext {
     customFields: c.customFields,
     subtaskStats: c.subtaskStats,
     taskTitles: c.taskTitles,
-    fieldLabels: (c as any).fieldLabels,
+    fieldLabels: (c as TimeViewContextWithLabels).fieldLabels,
     direction: input.groupDirection,
   };
 }
@@ -214,23 +216,27 @@ function taskLabels(t: TaskFile, context: TimeViewContext): ExportLabel[] {
     if (field.startsWith("custom_field:")) {
       const id = field.slice("custom_field:".length);
       const cf = context.customFields.find((x) => x.id === id);
-      const raw = cf ? effectiveCustomFieldValue(t, cf, { subtaskStats: context.subtaskStats }) : undefined;
+      const raw: unknown = cf ? effectiveCustomFieldValue(t, cf, { subtaskStats: context.subtaskStats }) : undefined;
       const value = cf ? customFieldText(cf, raw, { taskTitles: context.taskTitles }) : "";
       if (cf && value) out.push({ text: `${cf.name}: ${value}` });
       continue;
     }
-    const raw = (t.data as any)[field];
+    const raw = (t.data as unknown as Record<string, unknown>)[field];
     const value = simpleValue(raw);
-    if (value) out.push({ text: `${fieldLabelFrom((context as any).fieldLabels, field)}: ${value}` });
+    if (value) out.push({ text: `${fieldLabelFrom((context as TimeViewContextWithLabels).fieldLabels, field)}: ${value}` });
   }
   return out;
 }
 
-function simpleValue(raw: any): string {
+function simpleValue(raw: unknown): string {
   if (raw === undefined || raw === null || raw === "") return "";
   if (Array.isArray(raw)) return raw.map(simpleValue).filter(Boolean).join(", ");
-  if (typeof raw === "object") return String(raw.label || raw.value || raw.name || "");
-  return String(raw);
+  if (typeof raw === "object") {
+    const o = raw as { label?: string | number; value?: string | number; name?: string | number };
+    return String(o.label || o.value || o.name || "");
+  }
+  const primitive = raw as string | number | boolean;
+  return String(primitive);
 }
 
 function estimatedTaskLabelWidth(t: TaskFile, context: TimeViewContext, showTaskLabels: boolean): number {
@@ -319,7 +325,7 @@ function renderToCanvas(input: TimeExportInput): HTMLCanvasElement {
   const width = railW + axisW;
   const height = bodyTop + PAD;
   const dpr = Math.min(2, window.devicePixelRatio || 1);
-  const canvas = document.createElement("canvas");
+  const canvas = createEl("canvas");
   canvas.width = Math.round(width * dpr);
   canvas.height = Math.round(height * dpr);
   const g = canvas.getContext("2d")!;
@@ -554,8 +560,8 @@ export async function exportTimeView(plugin: InventTasksPlugin, fmt: TimeExportF
   let canvas: HTMLCanvasElement;
   try {
     canvas = renderToCanvas(input);
-  } catch (err: any) {
-    new Notice(tr("notice.timelineRenderFailed", { msg: err.message }));
+  } catch (err) {
+    new Notice(tr("notice.timelineRenderFailed", { msg: (err as Error).message }));
     return false;
   }
   const stamp = new Date();
@@ -579,7 +585,7 @@ export async function exportTimeView(plugin: InventTasksPlugin, fmt: TimeExportF
   const pdf = buildSingleImagePdf(jpeg, canvas.width, canvas.height);
   const path = normalizePath(`${dir}/${base}.pdf`);
   // `pdf` wraps a freshly allocated buffer of exactly its length → pass directly.
-  await plugin.app.vault.adapter.writeBinary(path, pdf.buffer as ArrayBuffer);
+  await plugin.app.vault.adapter.writeBinary(path, pdf.buffer);
   new Notice(tr("notice.timelineSaved", { path }));
   return true;
 }
@@ -594,7 +600,7 @@ function dataUrlToBytes(url: string): Uint8Array {
 
 // Minimal one-page PDF embedding a single JPEG (DCTDecode). Page is fit to a
 // max width (in points) preserving aspect, so it prints sensibly.
-function buildSingleImagePdf(jpeg: Uint8Array, imgW: number, imgH: number): Uint8Array {
+function buildSingleImagePdf(jpeg: Uint8Array, imgW: number, imgH: number): Uint8Array<ArrayBuffer> {
   const maxPt = 1400;
   const pageW = Math.min(maxPt, imgW);
   const pageH = Math.round((imgH / imgW) * pageW);

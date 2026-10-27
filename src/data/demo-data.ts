@@ -1,6 +1,7 @@
 import { WorkspaceIndex } from "./workspace-index";
 import { addBlock, addRelated } from "./relationships";
 import { t } from "../i18n";
+import type { TaskData } from "../types";
 
 // ===================================================================
 // Basic starter — a tiny, welcoming starting point for a brand-new user.
@@ -144,7 +145,7 @@ export async function bootstrapRichDemo(idx: WorkspaceIndex) {
     time_estimate?: number;
     time_tracked?: number;
     sprint_points?: number;
-    custom_fields?: Record<string, any>;
+    custom_fields?: Record<string, unknown>;
     parent_task?: string;
     relationships?: { blocks?: string[]; waiting_on?: string[]; related?: string[] };
     recurring?: { enabled: boolean; pattern: "daily" | "weekly" | "monthly" | "yearly"; every?: number; on?: string[]; day_of_month?: number };
@@ -164,7 +165,7 @@ export async function bootstrapRichDemo(idx: WorkspaceIndex) {
       context: opts.context,
       parent_task: opts.parent_task,
     });
-    const extras: any = {};
+    const extras: Partial<TaskData> = {};
     if (opts.start_date !== undefined) extras.start_date = opts.start_date;
     if (opts.time_estimate !== undefined) extras.time_estimate = opts.time_estimate;
     if (opts.time_tracked !== undefined) extras.time_tracked = opts.time_tracked;
@@ -186,7 +187,7 @@ export async function bootstrapRichDemo(idx: WorkspaceIndex) {
       });
     }
     if (Object.keys(extras).length > 0 || opts.body) {
-      await idx.updateTask(tf.data.id, (d) => ({
+      await idx.updateTask(tf.data.id, (d: TaskData) => ({
         data: { ...d, ...extras },
         body: opts.body,
       }));

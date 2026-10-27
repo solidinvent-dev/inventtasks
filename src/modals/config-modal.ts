@@ -5,8 +5,9 @@ import { renderIconRow, renderColorRow, openColorPicker, openIconPicker } from "
 import type InventTasksPlugin from "../main";
 import {
   
-  StatusDef, StatusGroup, CustomFieldDef, CustomFieldType, CustomFieldOption,
-  TagDef, ContextLabelDef, TaskType, PriorityDef, ViewType, PerViewDefaults,
+  StatusDef, StatusGroup, CustomFieldDef, CustomFieldType,
+  ConfigurableSet, WorkspaceConfig, SpaceConfig, FolderConfig, ListConfig,
+  TagDef, ContextLabelDef, TaskType, PriorityDef, PriorityId, ViewType, PerViewDefaults,
   ChipKind, ChipStyles, ChipStyleConfig, ResolvedChipStyles,
   CalendarSyncRule, CalendarSyncTarget, CalendarSyncTargetKind, CalendarSyncStatusPolicy,
 } from "../types";
@@ -24,6 +25,7 @@ import { applyChipStyle } from "../ui/components";
 import { ConfirmModal } from "./confirm-modal";
 import { FilterModal, FilterFieldDef, FilterFieldType } from "./filter-modal";
 import { slugify } from "../utils/slug";
+import { fireAndForget } from "../utils/async";
 import { customFieldTypeLabel, fieldLabel, t } from "../i18n";
 
 export type ConfigLevel = "workspace" | "space" | "folder" | "list";
@@ -108,11 +110,37 @@ const ARRAY_OVERRIDE_FIELDS = new Set([
   "calendar_sync_rules",
 ]);
 
+/** A configurable-set field may be `null` in the draft: inherit from the parent level (pruned on save). */
+type DraftConfigurableSet = { [K in keyof ConfigurableSet]?: ConfigurableSet[K] | null };
+
+/** Editable copy of the level's config: identity fields plus the configurable set. */
+interface ConfigDraft extends DraftConfigurableSet {
+  workspace_id?: string;
+  space_id?: string;
+  folder_id?: string;
+  list_id?: string;
+  name?: string;
+  icon?: string;
+  color?: string;
+  date_format?: string;
+  time_format?: string;
+  week_start?: string;
+  default_currency?: string;
+  active_color?: string;
+  active_text_color?: string;
+  custom_id_prefix?: string;
+  default_view?: string;
+  description?: string;
+  default_task_type?: string;
+  /** Section fields are also addressed by name (SECTION_RESET, RESET_ALL_FIELDS). */
+  [field: string]: unknown;
+}
+
 export class ConfigModal extends Modal {
   plugin: InventTasksPlugin;
   level: ConfigLevel;
   path?: string;
-  draft: any;
+  draft: ConfigDraft;
   activeTab = "general";
   initialTab?: string;
   private newCustomFields = new Set<CustomFieldDef>();
@@ -131,7 +159,7 @@ export class ConfigModal extends Modal {
   // source config object. `undefined` for an element = inherit from parent.
   // For workspace level we use the source-of-truth defaults if the field is
   // somehow missing.
-  private extractConfigurableSet(src: any, fillDefaults: boolean): any {
+  private extractConfigurableSet(src: ConfigurableSet | null | undefined, fillDefaults: boolean): DraftConfigurableSet {
     const def = fillDefaults;
     // For chip_styles, an existing workspace from before this feature shipped
     // serializes as `{}` — which is truthy, so `?? defaults` won't kick in.
@@ -161,7 +189,7 @@ export class ConfigModal extends Modal {
     };
   }
 
-  private makeDraft(): any {
+  private makeDraft(): ConfigDraft {
     // Backfill stable ids that are missing on legacy marker files created
     // before the plugin started writing them. Saving now persists the new id,
     // so deep links, the External API, and the sidebar "Copy id" entry all
@@ -259,7 +287,7 @@ export class ConfigModal extends Modal {
     const footer = c.createDiv({ cls: "it-modal-footer" });
     footer.createEl("button", { text: t("common.cancel"), cls: "it-btn-ghost" }).addEventListener("click", () => this.close());
     const save = footer.createEl("button", { cls: "it-btn-primary", text: t("common.saveChanges") });
-    save.addEventListener("click", () => this.save());
+    save.addEventListener("click", () => void this.save());
 
     // Restore scroll only if we stayed within the same tab — switching tabs
     // logically starts at the top.
@@ -270,9 +298,9 @@ export class ConfigModal extends Modal {
 
   private headerTitle(): string {
     if (this.level === "workspace") return t("modal.workspaceSettings");
-    if (this.level === "space") return t("modal.spaceSettings", { name: this.draft.name });
-    if (this.level === "folder") return t("modal.folderSettings", { name: this.draft.name });
-    if (this.level === "list") return t("modal.listSettings", { name: this.draft.name });
+    if (this.level === "space") return t("modal.spaceSettings", { name: this.draft.name as string });
+    if (this.level === "folder") return t("modal.folderSettings", { name: this.draft.name as string });
+    if (this.level === "list") return t("modal.listSettings", { name: this.draft.name as string });
     return t("modal.settings");
   }
 
@@ -309,7 +337,7 @@ export class ConfigModal extends Modal {
     parent.createEl("h3", { text: t("cfg.workspaceNameIdentity") });
 
     new Setting(parent).setName(t("cfg.name")).addText((el) =>
-      el.setValue(this.draft.name).onChange((v) => (this.draft.name = v))
+      el.setValue(this.draft.name as string).onChange((v) => (this.draft.name = v))
     );
 
     renderIconRow(parent, t("cfg.icon"), this.draft.icon, (v) => { this.draft.icon = v; this.onOpen(); }, { color: this.draft.color });
@@ -382,7 +410,7 @@ export class ConfigModal extends Modal {
 
   private renderSpaceGeneral(parent: HTMLElement) {
     parent.createEl("h3", { text: t("cfg.identity") });
-    new Setting(parent).setName(t("cfg.name")).addText((el) => el.setValue(this.draft.name).onChange((v) => (this.draft.name = v)));
+    new Setting(parent).setName(t("cfg.name")).addText((el) => el.setValue(this.draft.name as string).onChange((v) => (this.draft.name = v)));
     renderIconRow(parent, t("cfg.icon"), this.draft.icon, (v) => { this.draft.icon = v; this.onOpen(); }, { color: this.draft.color });
     renderColorRow(parent, t("cfg.color"), this.draft.color, (v) => { this.draft.color = v; this.onOpen(); });
     new Setting(parent)
@@ -395,7 +423,7 @@ export class ConfigModal extends Modal {
   }
 
   private renderFolderGeneral(parent: HTMLElement) {
-    new Setting(parent).setName(t("cfg.name")).addText((el) => el.setValue(this.draft.name).onChange((v) => (this.draft.name = v)));
+    new Setting(parent).setName(t("cfg.name")).addText((el) => el.setValue(this.draft.name as string).onChange((v) => (this.draft.name = v)));
     renderIconRow(parent, t("cfg.icon"), this.draft.icon, (v) => { this.draft.icon = v; this.onOpen(); }, { color: this.draft.color });
     renderColorRow(parent, t("cfg.color"), this.draft.color, (v) => { this.draft.color = v; this.onOpen(); });
     this.renderNotificationsScopeSetting(parent);
@@ -426,11 +454,11 @@ export class ConfigModal extends Modal {
   }
 
   private renderListGeneral(parent: HTMLElement) {
-    new Setting(parent).setName(t("cfg.name")).addText((el) => el.setValue(this.draft.name).onChange((v) => (this.draft.name = v)));
+    new Setting(parent).setName(t("cfg.name")).addText((el) => el.setValue(this.draft.name as string).onChange((v) => (this.draft.name = v)));
     renderIconRow(parent, t("cfg.icon"), this.draft.icon, (v) => { this.draft.icon = v; this.onOpen(); }, { color: this.draft.color });
     renderColorRow(parent, t("cfg.color"), this.draft.color, (v) => { this.draft.color = v; this.onOpen(); });
     new Setting(parent).setName(t("cfg.description")).addTextArea((el) => {
-      el.setValue(this.draft.description).onChange((v) => (this.draft.description = v));
+      el.setValue(this.draft.description as string).onChange((v) => (this.draft.description = v));
       el.inputEl.rows = 4;
       el.inputEl.addClass("it-input-full");
     });
@@ -507,12 +535,12 @@ export class ConfigModal extends Modal {
 
     // External notification channels (system / ntfy) — independent of
     // the in-app inbox above, each with the same inherit/on/off semantics.
-    parent.createEl("div", { cls: "setting-item-description it-cfg-subhead", text: t("cfg.extNotifyHint") });
+    parent.createDiv({ cls: "setting-item-description it-cfg-subhead", text: t("cfg.extNotifyHint") });
     this.renderInheritedBoolSetting(parent, "notify_system", t("cfg.notifySystem"), t("cfg.notifySystemDesc"));
     this.renderInheritedBoolSetting(parent, "notify_ntfy", t("cfg.notifyNtfy"), t("cfg.notifyNtfyDesc"));
 
     // Calendar export (CalDAV / ICS) — same inheritance model.
-    parent.createEl("div", { cls: "setting-item-description it-cfg-subhead", text: t("cfg.calendarSyncHint") });
+    parent.createDiv({ cls: "setting-item-description it-cfg-subhead", text: t("cfg.calendarSyncHint") });
     this.renderInheritedBoolSetting(parent, "calendar_sync", t("cfg.calendarSync"), t("cfg.calendarSyncDesc"));
   }
 
@@ -850,7 +878,7 @@ export class ConfigModal extends Modal {
     );
     if (!showEditor) return;
 
-    const fields = (this.draft.custom_fields ||= []) as CustomFieldDef[];
+    const fields = (this.draft.custom_fields ||= []);
     parent.createDiv({
       cls: "setting-item-description",
       text: t("cfg.fieldsImmutableNote"),
@@ -922,7 +950,7 @@ export class ConfigModal extends Modal {
     );
     if (!showEditor) return;
 
-    const tags = (this.draft.tags_palette ||= []) as TagDef[];
+    const tags = (this.draft.tags_palette ||= []);
 
     if (tags.length === 0) parent.createDiv({ cls: "it-empty-row", text: t("cfg.noTagsYet") });
 
@@ -947,12 +975,12 @@ export class ConfigModal extends Modal {
       const oldName = tg.name;
       const nameInput = row.createEl("input", { cls: "it-input-inline" });
       nameInput.value = tg.name;
-      nameInput.addEventListener("change", async () => {
+      nameInput.addEventListener("change", fireAndForget(async () => {
         const v = slugify(nameInput.value);
         if (!v) { nameInput.value = oldName; return; }
         tg.name = v;
         nameInput.value = v;
-      });
+      }));
       const remove = row.createEl("button", { cls: "it-btn-ghost", text: t("common.remove") });
       remove.addEventListener("click", () => {
         new ConfirmModal(this.app, {
@@ -976,7 +1004,7 @@ export class ConfigModal extends Modal {
   // ===== Task types =====
 
   private renderTaskTypes(parent: HTMLElement) {
-    const types = (this.draft.task_types ||= []) as TaskType[];
+    const types = (this.draft.task_types ||= []);
 
     parent.createEl("h3", { text: t("cfg.taskTypesTitle") });
     parent.createEl("p", {
@@ -1217,7 +1245,7 @@ export class ConfigModal extends Modal {
       effectiveFeatures
     );
     const all = [
-      ...filterFieldsByFeatures(availableFieldsFor(view as any), effectiveFeatures),
+      ...filterFieldsByFeatures(availableFieldsFor(view), effectiveFeatures),
       ...cfKeys,
     ];
 
@@ -1288,7 +1316,7 @@ export class ConfigModal extends Modal {
       const resetBar = parent.createDiv({ cls: "it-cfg-actions" });
       const reset = resetBar.createEl("button", { cls: "it-btn-secondary", text: t("cfg.resetToDefaults") });
       reset.addEventListener("click", () => {
-        vd[view] = { ...(vd[view] || {}), visible_fields: defaultVisibleFor(view as any) };
+        vd[view] = { ...(vd[view] || {}), visible_fields: defaultVisibleFor(view) };
         this.onOpen();
       });
       const inherit = resetBar.createEl("button", { cls: "it-btn-ghost", text: t("cfg.inheritFromParent") });
@@ -1519,7 +1547,7 @@ export class ConfigModal extends Modal {
         .setName(t("cfg.overrideDateField"))
         .setDesc(
           hasOverride
-            ? t("cfg.overrideDateFieldActive", { source: sourceLabel(curVal!) })
+            ? t("cfg.overrideDateFieldActive", { source: sourceLabel(curVal) })
             : t("cfg.overrideDateFieldInherit", { source: sourceLabel(inherited) })
         )
         .addToggle((tg) =>
@@ -1571,7 +1599,7 @@ export class ConfigModal extends Modal {
   // Generic "first parent level that defines this string prop wins" resolver
   // for view_defaults props (color_by / date_field / start_date_field).
   private resolveInheritedViewDefaultString(view: ViewType, prop: "color_by" | "date_field" | "start_date_field"): string | undefined {
-    const pick = (cfg: any): string | undefined => {
+    const pick = (cfg: ConfigurableSet | null | undefined): string | undefined => {
       const v = cfg?.view_defaults?.[view]?.[prop];
       return typeof v === "string" && v.length ? v : undefined;
     };
@@ -1637,7 +1665,7 @@ export class ConfigModal extends Modal {
   // the current draft's `empty_positions[axis]`. Stays optional — pass to
   // palette editors that should expose this affordance.
   private emptyCtxFor(axis: "status" | "priority" | "tags" | "context" | "type"): { position: number; onChange: (pos: number) => void } {
-    const map = (this.draft.empty_positions ||= {}) as Record<string, number>;
+    const map = (this.draft.empty_positions ||= {});
     return {
       position: typeof map[axis] === "number" ? map[axis] : 0,
       onChange: (pos: number) => {
@@ -1657,7 +1685,7 @@ export class ConfigModal extends Modal {
   // newly-added fields appear in the View-defaults picker immediately.
   private collectCustomFieldsAtThisLevel(): CustomFieldDef[] {
     const idx = this.plugin.index;
-    const chain: Array<CustomFieldDef[] | undefined> = [this.draft.custom_fields];
+    const chain: Array<CustomFieldDef[] | null | undefined> = [this.draft.custom_fields];
     if (this.level === "list" && this.path) {
       const list = idx.findList(this.path);
       if (list?.folderPath) chain.push(idx.findFolder(list.folderPath)?.config.custom_fields);
@@ -1720,7 +1748,7 @@ export class ConfigModal extends Modal {
         if (v?.visible_fields?.length) return v.visible_fields;
       }
     }
-    return defaultVisibleFor(view as any);
+    return defaultVisibleFor(view);
   }
 
   // ===== Task types override (Folder/List) =====
@@ -1819,7 +1847,7 @@ export class ConfigModal extends Modal {
         ? t("cfg.featuresDescWorkspace")
         : t("cfg.featuresDescOverride"));
 
-    const apps = (this.draft.features ||= {}) as Record<string, boolean>;
+    const apps = (this.draft.features ||= {});
     // Functional feature toggles — these enable/disable actual behaviour and,
     // where applicable, hide the field from every view (see FEATURE_FIELDS).
     const toggleIds = [
@@ -1906,7 +1934,7 @@ export class ConfigModal extends Modal {
     setIcon(note.createSpan({ cls: "it-cfg-note-ic" }), "info");
     note.createSpan({ cls: "it-cfg-note-text", text: t("cfg.fieldNamesNote") });
 
-    const labels = (this.draft.field_labels ||= {}) as Record<string, string>;
+    const labels = (this.draft.field_labels ||= {});
     // Parent's effective custom names (excluding this level's draft) — used to
     // show what a blank field will inherit/display.
     const parentEffective = this.level !== "workspace" ? this.computeParentFieldLabels() : {};
@@ -1949,7 +1977,7 @@ export class ConfigModal extends Modal {
   // the unsaved draft into account so the modal's own pickers (view defaults,
   // filters) reflect renames immediately. Draft override > inherited > default.
   private fieldLabelAt(key: string): string {
-    const draftLabels = (this.draft.field_labels || {}) as Record<string, string>;
+    const draftLabels = (this.draft.field_labels || {});
     const own = typeof draftLabels[key] === "string" ? draftLabels[key].trim() : "";
     if (own) return own;
     const parentEff = this.level === "workspace" ? {} : this.computeParentFieldLabels();
@@ -2014,7 +2042,7 @@ export class ConfigModal extends Modal {
         ? t("cfg.labelStylesDescWorkspace")
         : t("cfg.labelStylesDescOverride", { level: cfgLevel(this.level) }));
 
-    const draftStyles = (this.draft.chip_styles ||= {}) as ChipStyles;
+    const draftStyles = (this.draft.chip_styles ||= {});
     const parentEffective = this.level !== "workspace" ? this.computeParentChipStyles() : null;
     // What the user currently sees from this level (draft on top of inheritance) —
     // used for the preview chip.
@@ -2101,7 +2129,7 @@ export class ConfigModal extends Modal {
     const base = this.level === "workspace"
       ? this.plugin.index.resolveChipStyles()
       : this.computeParentChipStyles();
-    const merged: ResolvedChipStyles = JSON.parse(JSON.stringify(base));
+    const merged = JSON.parse(JSON.stringify(base)) as ResolvedChipStyles;
     for (const k of CHIP_KINDS) {
       const cfg = draftStyles[k];
       if (!cfg) continue;
@@ -2199,7 +2227,7 @@ export class ConfigModal extends Modal {
       }
     }
 
-    const labels = (this.draft.context_labels ||= []) as ContextLabelDef[];
+    const labels = (this.draft.context_labels ||= []);
     if (this.level === "workspace" && labels.length === 0) {
       const empty = parent.createDiv({ cls: "it-empty-row" });
       empty.createSpan({ text: t("cfg.noLabelsFallback") });
@@ -2263,19 +2291,19 @@ export class ConfigModal extends Modal {
     try {
       validateCustomFields(this.draft.custom_fields);
       if (this.level === "workspace") {
-        await this.plugin.index.updateWorkspaceConfig(this.draft);
+        await this.plugin.index.updateWorkspaceConfig(this.draft as Partial<WorkspaceConfig>);
       } else if (this.level === "space" && this.path) {
-        await this.plugin.index.updateSpaceConfig(this.path, this.draft);
+        await this.plugin.index.updateSpaceConfig(this.path, this.draft as Partial<SpaceConfig>);
       } else if (this.level === "folder" && this.path) {
-        await this.plugin.index.updateFolderConfig(this.path, this.draft);
+        await this.plugin.index.updateFolderConfig(this.path, this.draft as Partial<FolderConfig>);
       } else if (this.level === "list" && this.path) {
-        await this.plugin.index.updateListConfig(this.path, this.draft);
+        await this.plugin.index.updateListConfig(this.path, this.draft as Partial<ListConfig>);
       }
       await this.plugin.index.rescan();
       new Notice(t("cfg.settingsSaved"));
       this.close();
-    } catch (e: any) {
-      new Notice(t("cfg.saveFailed", { msg: e?.message ?? String(e) }));
+    } catch (e) {
+      new Notice(t("cfg.saveFailed", { msg: (e as Error | undefined)?.message ?? String(e) }));
     }
   }
 
@@ -2298,7 +2326,7 @@ export class ConfigModal extends Modal {
     );
     if (!showEditor) return;
 
-    const rules = (this.draft.calendar_sync_rules ||= []) as CalendarSyncRule[];
+    const rules = (this.draft.calendar_sync_rules ||= []);
     const targets = this.calendarSyncTargets();
     const list = parent.createDiv({ cls: "it-cfg-calendar-rules" });
     if (!rules.length) {
@@ -2490,7 +2518,7 @@ export class ConfigModal extends Modal {
       out.push(def);
     }
     for (const def of out) {
-      const meta = fieldIconMeta(def.key, customFields as any);
+      const meta = fieldIconMeta(def.key, customFields);
       def.icon = meta.icon;
       def.color = meta.color;
     }
@@ -2693,7 +2721,7 @@ function renderPriorityList(
     idInput.title = t("cfg.numericIdTitle");
     idInput.addEventListener("change", () => {
       const n = parseInt(idInput.value, 10);
-      if (!isNaN(n)) p.id = n as any;
+      if (!isNaN(n)) p.id = n as PriorityId;
     });
 
     const labelInput = row.createEl("input", { cls: "it-input-inline" });
@@ -2716,12 +2744,12 @@ function renderPriorityList(
   const add = addBar.createEl("button", { cls: "it-btn-secondary", text: t("cfg.addPriority") });
   add.addEventListener("click", () => {
     const maxId = priorities.reduce((m, x) => Math.max(m, Number(x.id)), 0);
-    priorities.push({ id: (maxId + 1) as any, label: t("cfg.newPriority"), color: PALETTE[(priorities.length) % PALETTE.length], icon: "flag" });
+    priorities.push({ id: (maxId + 1) as PriorityId, label: t("cfg.newPriority"), color: PALETTE[(priorities.length) % PALETTE.length], icon: "flag" });
     rerender();
   });
 }
 
-function validateCustomFields(raw: any): void {
+function validateCustomFields(raw: unknown): void {
   if (!Array.isArray(raw)) return;
   const ids = new Set<string>();
   for (const field of raw as CustomFieldDef[]) {
@@ -2791,7 +2819,7 @@ function renderFieldEditor(app: App, parent: HTMLElement, fields: CustomFieldDef
             icon: CUSTOM_FIELD_TYPE_META[type].icon, color: CUSTOM_FIELD_TYPE_META[type].color,
           })),
           onSelect: (v) => {
-            f.type = v as CustomFieldType;
+            f.type = v;
             document.querySelectorAll(".it-popover").forEach((el) => el.remove());
             rerender();
           },
@@ -2843,7 +2871,7 @@ function renderFieldTypeConfig(app: App, parent: HTMLElement, f: CustomFieldDef,
     case "dropdown":
     case "labels": {
       parent.createEl("h4", { text: t("cfg.options") });
-      const opts = (f.options ||= []) as CustomFieldOption[];
+      const opts = (f.options ||= []);
       for (let i = 0; i < opts.length; i++) {
         const o = opts[i];
         // Older configs may omit `value`, in which case task files store the

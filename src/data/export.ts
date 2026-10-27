@@ -7,12 +7,13 @@
 // Scope: workspace / space / folder / list / single task, plus "current view"
 // and "saved view" (handled by the caller passing the tasks + columns).
 
-import { Notice, Component, MarkdownRenderer, normalizePath } from "obsidian";
+import { Notice, Component, MarkdownRenderer, normalizePath, arrayBufferToBase64, type TAbstractFile } from "obsidian";
 import { t } from "../i18n";
 import type InventTasksPlugin from "../main";
 import {
   TaskData, TaskFile, SpaceNode, FolderNode, ListNode, ViewConfig,
   SpaceConfig, FolderConfig, ListConfig, WorkspaceConfig, CustomFieldDef, ContextLocation,
+  PriorityDef, StatusDef,
 } from "../types";
 import { csvCellValue, csvEscape } from "../views/table-view";
 import { fieldLabelFrom } from "../i18n";
@@ -57,13 +58,27 @@ export interface BackupBundle {
   rawFiles?: BackupRawFile[];           // docs/templates/attachments/state/raw config not represented structurally
 }
 
+/**
+ * Lookup context the readable exports use to resolve names and labels. Built
+ * by buildScopeContext for scope exports; a view export passes its own view
+ * context, which carries these members too.
+ */
+export interface ReadableExportContext {
+  statuses: StatusDef[];
+  priorities: PriorityDef[];
+  customFields?: CustomFieldDef[];
+  fieldLabels?: Record<string, string>;
+  subtaskStats?: Map<string, { total: number; done: number }>;
+  taskTitles?: Map<string, string>;
+}
+
 const GLOBAL_VIEW_LOCS = new Set(["everything", "today", "favorites", "recents", "archived"]);
 
 function viewsForKey(plugin: InventTasksPlugin, key: string): ViewConfig[] {
   return plugin.index.viewsForLocationKey(key).map((v) => {
-    const c: any = { ...v };
+    const c: ViewConfig = { ...v };
     delete c.__path; // internal source-path marker — never persisted
-    return c as ViewConfig;
+    return c;
   });
 }
 
@@ -119,7 +134,7 @@ export async function buildBackup(plugin: InventTasksPlugin, scope: ExportScope,
   if (scope === "workspace") {
     const globalViews = plugin.index.views
       .filter((v) => GLOBAL_VIEW_LOCS.has(v.location || ""))
-      .map((v) => { const c: any = { ...v }; delete c.__path; return c as ViewConfig; });
+      .map((v) => { const c: ViewConfig = { ...v }; delete c.__path; return c; });
     const bundle: BackupBundle = {
       ...base,
       scopeName: plugin.index.workspace?.name || "Workspace",
@@ -208,7 +223,7 @@ function tasksInBundle(bundle: BackupBundle): BackupTask[] {
 }
 
 async function listFilesRecursive(plugin: InventTasksPlugin, dir: string): Promise<string[]> {
-  const adapter: any = plugin.app.vault.adapter;
+  const adapter = plugin.app.vault.adapter;
   try {
     if (!(await adapter.exists(dir))) return [];
     const listing = await adapter.list(dir);
@@ -264,10 +279,10 @@ async function collectRawFiles(
     if (task.data.cover_image) add(localCoverPath(task.data.cover_image), "cover");
     for (const docId of task.data.documents || []) {
       for (const doc of plugin.index.docs || []) {
-        if ((doc as any).doc_id === docId) add((doc as any).__path, "doc");
+        if (doc.doc_id === docId) add(doc.__path, "doc");
       }
       for (const page of plugin.index.docPages || []) {
-        if ((page as any).doc_id === docId) add((page as any).__path, "doc");
+        if (page.doc_id === docId) add(page.__path, "doc");
       }
     }
   }
@@ -287,7 +302,7 @@ async function collectRawFiles(
 }
 
 async function readBackupRawFile(plugin: InventTasksPlugin, path: string, kind: BackupRawFile["kind"]): Promise<BackupRawFile | null> {
-  const adapter: any = plugin.app.vault.adapter;
+  const adapter = plugin.app.vault.adapter;
   try {
     if (!(await adapter.exists(path))) return null;
     if (/\.md$|\.json$|\.txt$|\.csv$|\.html$/i.test(path)) {
@@ -295,7 +310,7 @@ async function readBackupRawFile(plugin: InventTasksPlugin, path: string, kind: 
     }
     if (adapter.readBinary) {
       const data = await adapter.readBinary(path);
-      return { path, kind, encoding: "base64", data: Buffer.from(data).toString("base64") };
+      return { path, kind, encoding: "base64", data: arrayBufferToBase64(data) };
     }
     return { path, kind, encoding: "utf8", data: await adapter.read(path) };
   } catch {
@@ -332,8 +347,8 @@ export function gatherScopeTasks(plugin: InventTasksPlugin, scope: ExportScope, 
 // Builds the lookup context csvCellValue needs (statuses + priorities + custom
 // fields). Statuses/CFs are UNIONed across the scope's lists so names resolve
 // even when sub-lists override the workflow.
-export function buildScopeContext(plugin: InventTasksPlugin, lists: ListNode[], loc: ContextLocation): any {
-  const statusMap = new Map<string, any>();
+export function buildScopeContext(plugin: InventTasksPlugin, lists: ListNode[], loc: ContextLocation): ReadableExportContext {
+  const statusMap = new Map<string, StatusDef>();
   const cfMap = new Map<string, CustomFieldDef>();
   for (const l of lists) {
     for (const s of plugin.index.resolveStatusSet(l.path).statuses) if (!statusMap.has(s.id)) statusMap.set(s.id, s);
@@ -355,25 +370,25 @@ export function buildScopeContext(plugin: InventTasksPlugin, lists: ListNode[], 
 
 // Default readable columns for a scope export: a comprehensive built-in set plus
 // every custom field present in the context.
-export function defaultReadableColumns(ctx: any): string[] {
+export function defaultReadableColumns(ctx: ReadableExportContext): string[] {
   const builtin = [
     "custom_id", "title", "type", "status", "priority", "start_date", "due_date",
     "tags", "context", "time_estimate", "time_tracked", "sprint_points",
     "list", "folder", "space", "created_at", "updated_at",
   ];
-  const cfs = (ctx.customFields as CustomFieldDef[] | undefined)?.map((c) => `custom_field:${c.id}`) || [];
+  const cfs = ctx.customFields?.map((c) => `custom_field:${c.id}`) || [];
   return [...builtin, ...cfs];
 }
 
-function colLabel(col: string, ctx: any): string {
+function colLabel(col: string, ctx: ReadableExportContext): string {
   if (col.startsWith("custom_field:")) {
     const id = col.slice(13);
-    return (ctx.customFields as CustomFieldDef[] | undefined)?.find((c) => c.id === id)?.name || id;
+    return ctx.customFields?.find((c) => c.id === id)?.name || id;
   }
   return fieldLabelFrom(ctx?.fieldLabels, col) || col;
 }
 
-export function tasksToCsv(tasks: TaskFile[], cols: string[], plugin: InventTasksPlugin, ctx: any): string {
+export function tasksToCsv(tasks: TaskFile[], cols: string[], plugin: InventTasksPlugin, ctx: ReadableExportContext): string {
   const header = cols.map((c) => csvEscape(colLabel(c, ctx))).join(",");
   const rows = tasks.map((t) => cols.map((c) => csvEscape(csvCellValue(t, c, plugin, ctx))).join(","));
   return "﻿" + [header, ...rows].join("\r\n"); // BOM so Excel reads UTF-8
@@ -390,14 +405,14 @@ function crc32(bytes: Uint8Array): number {
   return (crc ^ 0xffffffff) >>> 0;
 }
 
-function concatBytes(parts: Uint8Array[]): Uint8Array {
+function concatBytes(parts: Uint8Array[]): Uint8Array<ArrayBuffer> {
   const out = new Uint8Array(parts.reduce((sum, part) => sum + part.length, 0));
   let offset = 0;
   for (const part of parts) { out.set(part, offset); offset += part.length; }
   return out;
 }
 
-function zipStored(files: Array<{ name: string; data: string }>): Uint8Array {
+function zipStored(files: Array<{ name: string; data: string }>): Uint8Array<ArrayBuffer> {
   const encoder = new TextEncoder();
   const locals: Uint8Array[] = [];
   const central: Uint8Array[] = [];
@@ -477,8 +492,8 @@ function excelDate(value: string): number | null {
   return Number.isFinite(utc) ? utc / 86_400_000 + 25569 : null;
 }
 
-function xlsxCellValue(task: TaskFile, col: string, plugin: InventTasksPlugin, ctx: any): XlsxValue {
-  const data: any = task.data;
+function xlsxCellValue(task: TaskFile, col: string, plugin: InventTasksPlugin, ctx: ReadableExportContext): XlsxValue {
+  const data = task.data as unknown as Record<string, unknown>;
   if (["time_estimate", "time_tracked", "sprint_points"].includes(col) && typeof data[col] === "number") {
     return { value: data[col] };
   }
@@ -490,7 +505,7 @@ function xlsxCellValue(task: TaskFile, col: string, plugin: InventTasksPlugin, c
     const id = col.slice(13);
     const field = ctx.customFields?.find((candidate: CustomFieldDef) => candidate.id === id);
     if (field) {
-      const raw = effectiveCustomFieldValue(task, field, { subtaskStats: ctx.subtaskStats });
+      const raw: unknown = effectiveCustomFieldValue(task, field, { subtaskStats: ctx.subtaskStats });
       if (["number", "money", "rating"].includes(field.type) && typeof raw === "number") return { value: raw, style: field.type === "money" ? 6 : undefined };
       if (["progress_manual", "progress_auto"].includes(field.type) && Number.isFinite(Number(raw))) return { value: Number(raw) / 100, style: 5 };
       if (field.type === "checkbox" && typeof raw === "boolean") return { value: raw };
@@ -515,7 +530,7 @@ function xlsxCell(ref: string, entry: XlsxValue, header = false): string {
   return `<c r="${ref}" t="inlineStr"${styleAttr}><is><t xml:space="preserve">${xmlEsc(entry.value)}</t></is></c>`;
 }
 
-export function tasksToXlsx(tasks: TaskFile[], cols: string[], plugin: InventTasksPlugin, ctx: any): Uint8Array {
+export function tasksToXlsx(tasks: TaskFile[], cols: string[], plugin: InventTasksPlugin, ctx: ReadableExportContext): Uint8Array<ArrayBuffer> {
   const rows: string[] = [];
   rows.push(`<row r="1">${cols.map((col, index) => xlsxCell(`${xlsxColumnName(index)}1`, { value: colLabel(col, ctx) }, true)).join("")}</row>`);
   tasks.forEach((task, taskIndex) => {
@@ -542,7 +557,7 @@ export function tasksToXlsx(tasks: TaskFile[], cols: string[], plugin: InventTas
   return zipStored(files);
 }
 
-export function tasksToReadableJson(tasks: TaskFile[], cols: string[], plugin: InventTasksPlugin, ctx: any, scopeName: string): string {
+export function tasksToReadableJson(tasks: TaskFile[], cols: string[], plugin: InventTasksPlugin, ctx: ReadableExportContext, scopeName: string): string {
   const rows = tasks.map((t) => {
     const o: Record<string, string> = {};
     for (const c of cols) o[colLabel(c, ctx)] = csvCellValue(t, c, plugin, ctx);
@@ -555,7 +570,7 @@ function mdCell(s: string): string {
   return s.replace(/\r?\n/g, " ").replace(/\|/g, "\\|");
 }
 
-export function tasksToMarkdown(scopeName: string, tasks: TaskFile[], cols: string[], plugin: InventTasksPlugin, ctx: any): string {
+export function tasksToMarkdown(scopeName: string, tasks: TaskFile[], cols: string[], plugin: InventTasksPlugin, ctx: ReadableExportContext): string {
   const lines: string[] = [];
   lines.push(`# ${scopeName}`, "", `_Exported ${new Date().toLocaleString()} — ${tasks.length} task(s)._`, "");
   if (tasks.length === 0) { lines.push("_No tasks._"); return lines.join("\n"); }
@@ -641,7 +656,7 @@ function htmlDoc(title: string, meta: string, inner: string, printButton: boolea
 </body></html>`;
 }
 
-export function tasksToHtml(scopeName: string, tasks: TaskFile[], cols: string[], plugin: InventTasksPlugin, ctx: any, opts?: { printButton?: boolean }): string {
+export function tasksToHtml(scopeName: string, tasks: TaskFile[], cols: string[], plugin: InventTasksPlugin, ctx: ReadableExportContext, opts?: { printButton?: boolean }): string {
   const head = cols.map((c) => `<th>${htmlEsc(colLabel(c, ctx))}</th>`).join("");
   const body = tasks.map((t) =>
     "<tr>" + cols.map((c) => `<td>${htmlEsc(csvCellValue(t, c, plugin, ctx))}</td>`).join("") + "</tr>"
@@ -653,13 +668,13 @@ export function tasksToHtml(scopeName: string, tasks: TaskFile[], cols: string[]
 // ---------- Single-task "note" export (document, not a table) ----------
 
 // The fields shown in a task note, one under another. Empty values are skipped.
-function noteFields(ctx: any): string[] {
+function noteFields(ctx: ReadableExportContext): string[] {
   const builtin = [
     "type", "status", "priority", "start_date", "due_date",
     "time_estimate", "time_tracked", "sprint_points", "tags", "context",
     "list", "folder", "space", "created_at", "updated_at",
   ];
-  const cfs = (ctx.customFields as CustomFieldDef[] | undefined)?.map((c) => `custom_field:${c.id}`) || [];
+  const cfs = ctx.customFields?.map((c) => `custom_field:${c.id}`) || [];
   return [...builtin, ...cfs];
 }
 
@@ -687,7 +702,7 @@ function titlesOf(plugin: InventTasksPlugin, ids: string[]): string[] {
   return ids.map((id) => plugin.index.tasksById.get(id)?.data.title || id);
 }
 
-export function taskToMarkdownNote(plugin: InventTasksPlugin, tf: TaskFile, ctx: any): string {
+export function taskToMarkdownNote(plugin: InventTasksPlugin, tf: TaskFile, ctx: ReadableExportContext): string {
   const d = tf.data;
   const out: string[] = [];
   out.push(`# ${d.title || t("common.untitled")}`, "");
@@ -744,17 +759,17 @@ export function taskToMarkdownNote(plugin: InventTasksPlugin, tf: TaskFile, ctx:
 }
 
 function resourceUrl(plugin: InventTasksPlugin, vaultPath: string): string | null {
-  try { return (plugin.app.vault.adapter as any).getResourcePath(vaultPath) || null; } catch { return null; }
+  try { return plugin.app.vault.adapter.getResourcePath(vaultPath) || null; } catch { return null; }
 }
 
-export async function taskToHtmlNote(plugin: InventTasksPlugin, tf: TaskFile, ctx: any, opts: { printButton: boolean }): Promise<string> {
+export async function taskToHtmlNote(plugin: InventTasksPlugin, tf: TaskFile, ctx: ReadableExportContext, opts: { printButton: boolean }): Promise<string> {
   const d = tf.data;
 
   // Render the Description (markdown body) to HTML so formatting + images show.
   let bodyHtml = "";
   const bodyMd = stripLeadingTitle(tf.body, d.title || "");
   if (bodyMd) {
-    const tmp = document.createElement("div");
+    const tmp = createDiv();
     const comp = new Component();
     try {
       await MarkdownRenderer.render(plugin.app, bodyMd, tmp, tf.filePath || "", comp);
@@ -820,7 +835,7 @@ export function safeFilenameBase(name: string): string {
 export function downloadFile(filename: string, content: BlobPart, mime: string) {
   const blob = new Blob([content], { type: typeof content === "string" ? mime + ";charset=utf-8;" : mime });
   const url = URL.createObjectURL(blob);
-  const a = document.createElement("a");
+  const a = createEl("a");
   a.href = url;
   a.download = filename;
   document.body.appendChild(a);
@@ -832,7 +847,7 @@ export function downloadFile(filename: string, content: BlobPart, mime: string) 
 // Opens the system print dialog with the given HTML (for "Save as PDF"). Uses a
 // hidden iframe so only this content prints, not the Obsidian window.
 export function printHtml(html: string) {
-  const iframe = document.createElement("iframe");
+  const iframe = createEl("iframe");
   iframe.addClass("it-print-frame");
   document.body.appendChild(iframe);
   const doc = iframe.contentWindow?.document;
@@ -840,7 +855,7 @@ export function printHtml(html: string) {
   doc.open();
   doc.write(html);
   doc.close();
-  const win = iframe.contentWindow!;
+  const win = iframe.contentWindow;
   const go = () => {
     try { win.focus(); win.print(); } catch { /* ignore */ }
     window.setTimeout(() => iframe.remove(), 1000);
@@ -884,7 +899,7 @@ async function inlineHtmlImages(html: string): Promise<string> {
     if (s.startsWith("data:")) continue;
     try { const resp = await fetch(s); map.set(s, await blobToDataUri(await resp.blob())); } catch { /* keep original */ }
   }
-  return html.replace(/(<img\b[^>]*?\ssrc=")([^"]+)(")/g, (full, a, s, b) => (map.has(s) ? a + map.get(s) + b : full));
+  return html.replace(/(<img\b[^>]*?\ssrc=")([^"]+)(")/g, (full: string, a: string, s: string, b: string) => (map.has(s) ? a + map.get(s) + b : full));
 }
 
 async function ensureExportFolder(plugin: InventTasksPlugin, baseName: string): Promise<string> {
@@ -915,7 +930,7 @@ async function exportHtmlFolder(plugin: InventTasksPlugin, html: string, baseNam
       map.set(s, `images/${name}`);
     } catch { /* keep original src */ }
   }
-  const out = html.replace(/(<img\b[^>]*?\ssrc=")([^"]+)(")/g, (full, a, s, b) => (map.has(s) ? a + map.get(s) + b : full));
+  const out = html.replace(/(<img\b[^>]*?\ssrc=")([^"]+)(")/g, (full: string, a: string, s: string, b: string) => (map.has(s) ? a + map.get(s) + b : full));
   await plugin.app.vault.adapter.write(`${folder}/${safeFilenameBase(baseName)}.html`, out);
   return folder;
 }
@@ -929,7 +944,7 @@ async function exportMarkdownFolder(plugin: InventTasksPlugin, tf: TaskFile, md:
   await plugin.index.ensureFolder(imagesDir);
   let i = 0;
   const copied = new Map<string, string>(); // vault path → relative
-  const copyVaultFile = async (file: any): Promise<string | null> => {
+  const copyVaultFile = async (file: { path: string; name: string }): Promise<string | null> => {
     if (copied.has(file.path)) return copied.get(file.path)!;
     try {
       const buf = await app.vault.adapter.readBinary(file.path);
@@ -953,7 +968,7 @@ async function exportMarkdownFolder(plugin: InventTasksPlugin, tf: TaskFile, md:
   for (const s of std) {
     const target = s[2].trim();
     if (/^(https?:|data:|app:|images\/)/i.test(target)) continue;
-    const af: any = app.vault.getAbstractFileByPath(normalizePath(target));
+    const af: (TAbstractFile & { extension?: string }) | null = app.vault.getAbstractFileByPath(normalizePath(target));
     if (af && af.extension) { const rel = await copyVaultFile(af); if (rel) out = out.split(s[0]).join(`![${s[1]}](${rel})`); }
   }
   await app.vault.adapter.write(`${folder}/${safeFilenameBase(baseName)}.md`, out);
@@ -980,7 +995,7 @@ export async function exportReadable(opts: {
   scopeName: string;
   tasks: TaskFile[];
   cols: string[];
-  ctx: any;
+  ctx: ReadableExportContext;
   openPrint?: boolean;
   // When set (single-task export), Markdown/HTML render as a full note
   // document (body + fields + media) instead of a one-row table.

@@ -258,7 +258,7 @@ export class TaskPickerModal extends Modal {
     el.addEventListener("click", () => {
       onToggle();
       el.toggleClass("is-selected", this.selected.has(tf.data.id));
-      const cb = el.querySelector("input.it-task-picker-check") as HTMLInputElement | null;
+      const cb = el.querySelector<HTMLInputElement>("input.it-task-picker-check");
       if (cb) cb.checked = this.selected.has(tf.data.id);
     });
   }

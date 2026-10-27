@@ -49,7 +49,7 @@ export function pickAppearance(state: AppearanceOverrides): AppearanceOverrides 
   for (const key of APPEARANCE_KEYS) {
     const value = state[key];
     if (value === undefined) continue;
-    (out as any)[key] = Array.isArray(value) ? value.slice() : value;
+    (out as Record<string, unknown>)[key] = Array.isArray(value) ? value.slice() : value;
   }
   return out;
 }
@@ -58,7 +58,7 @@ export function pickAppearance(state: AppearanceOverrides): AppearanceOverrides 
 export function applyAppearance(saved: AppearanceOverrides | undefined, state: AppearanceOverrides): void {
   for (const key of APPEARANCE_KEYS) {
     const value = saved?.[key];
-    (state as any)[key] = value === undefined ? undefined : Array.isArray(value) ? value.slice() : value;
+    (state as Record<string, unknown>)[key] = value === undefined ? undefined : Array.isArray(value) ? value.slice() : value;
   }
 }
 

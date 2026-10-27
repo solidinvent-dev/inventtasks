@@ -36,9 +36,9 @@ export class NtfyChannel {
         return `ntfy HTTP ${resp.status}`;
       }
       return null;
-    } catch (e: any) {
+    } catch (e) {
       console.error("[InventTasks] ntfy send error:", e);
-      return e?.message || String(e);
+      return (e as Error | undefined)?.message || String(e);
     }
   }
 

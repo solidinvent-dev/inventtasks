@@ -1,17 +1,18 @@
 import { setIcon, Platform, Modal } from "obsidian";
 import type InventTasksPlugin from "../main";
-import { TaskFile, StatusDef, PriorityDef, ResolvedChipStyles, CustomFieldDef, ContextLabelDef, TagDef } from "../types";
+import { TaskData, TaskFile, StatusDef, PriorityDef, ResolvedChipStyles, CustomFieldDef, ContextLabelDef, TagDef } from "../types";
 import { projectOccurrences } from "../data/recurring";
 import { renderCustomFieldValue } from "../ui/cf-render";
 import { effectiveCustomFieldValue, isEmptyCustomFieldValue } from "../data/custom-fields";
 import { ViewState } from "./main-view";
 import { parseDate, startOfMonth, endOfMonth, addDays, addMonths, isOverdue, formatDate, dayKey, todayKey, weekStartIndex } from "../utils/dates";
-import { QuickTaskModal } from "../modals/create-modals";
+import { QuickTaskModal, type QuickTaskOptions } from "../modals/create-modals";
 import { statusChip, priorityChip, tagChip, applyChipStyleByKind, renderListReference } from "../ui/components";
 import { renderIconish, renderCfTypeIcon } from "../ui/icons";
 import { CALENDAR_COLOR_SOURCE_DEFAULT, DATE_SOURCE_DUE } from "../constants";
 import { taskDateValue, isDateSourceWritable, mapDatePatch, presetForDateSource } from "../data/date-source";
 import { viewLabel, weekdayShort, weekdayMin, weekdayLong, monthName, t as tr } from "../i18n";
+import { fireAndForget } from "../utils/async";
 
 type CalendarPeriod = "month" | "week" | "day" | "monthCompact";
 const CALENDAR_PERIODS: CalendarPeriod[] = ["month", "week", "day", "monthCompact"];
@@ -29,9 +30,10 @@ interface CalendarContext {
   features: Record<string, boolean>;
   tagsPalette: TagDef[];
   contextLabels: ContextLabelDef[];
-  taskTypesOrder: Array<{ id: string; name: string; color?: string }>;
+  taskTypesOrder: Array<{ id: string; name: string; color?: string; icon?: string }>;
   customFields: CustomFieldDef[];
   chipStyles: ResolvedChipStyles;
+  showFieldIcons?: boolean;
   calendarColorBy?: string;
   // Which task field places the pill ("due_date" default — see date-source.ts).
   dateField?: string;
@@ -40,6 +42,12 @@ interface CalendarContext {
   // Built once per render in tasksContext — avoids per-pill allTasks() scans.
   subtaskStats?: Map<string, { total: number; done: number }>;
   relationshipCounts?: Map<string, number>;
+}
+
+// Scroll offsets stashed on the transient view state across re-renders.
+interface CalendarScrollState {
+  __calScrollTop?: unknown;
+  __calScrollLeft?: unknown;
 }
 
 interface RenderOpts {
@@ -164,17 +172,17 @@ export function renderCalendarView(opts: RenderOpts) {
   // (a task drag/edit → index change → full re-render) recreates this container
   // at top. Persist its offset on the view state and restore it after render so
   // the viewport stays put instead of jumping to the top.
-  const scroll = parent.querySelector(".it-cal-scroll") as HTMLElement | null;
+  const scroll = parent.querySelector<HTMLElement>(".it-cal-scroll");
   if (scroll) {
     scroll.addEventListener("scroll", () => {
-      (state as any).__calScrollTop = scroll.scrollTop;
-      (state as any).__calScrollLeft = scroll.scrollLeft;
+      (state as CalendarScrollState).__calScrollTop = scroll.scrollTop;
+      (state as CalendarScrollState).__calScrollLeft = scroll.scrollLeft;
     });
     // The compact "Overview" always opens at the top so the day-name header and
     // the first weeks are visible (the chrome auto-collapses around it); only the
     // bottom weeks may fall below the fold. Other periods restore their offset.
-    const savedTop = (state as any).__calScrollTop;
-    const savedLeft = (state as any).__calScrollLeft;
+    const savedTop = (state as CalendarScrollState).__calScrollTop;
+    const savedLeft = (state as CalendarScrollState).__calScrollLeft;
     if (state.calendarPeriod !== "monthCompact" && (typeof savedTop === "number" || typeof savedLeft === "number")) {
       window.requestAnimationFrame(() => {
         if (typeof savedTop === "number") scroll.scrollTop = savedTop;
@@ -379,7 +387,7 @@ function renderMonthCompact(opts: RenderOpts) {
   const ROW = BAR_H + GAP;
   let lastCap = -1;
   const fill = () => {
-    const sample = grid.querySelector(".it-cal-cbars") as HTMLElement | null;
+    const sample = grid.querySelector<HTMLElement>(".it-cal-cbars");
     const avail = sample?.clientHeight ?? 0;
     // Pre-layout (0 height) → fall back to a small cap so something shows.
     const cap = avail > 0 ? Math.max(1, Math.floor((avail + GAP) / ROW)) : 3;
@@ -464,7 +472,7 @@ class CalendarDayModal extends Modal {
       // pre-fills (due_date, start_date, or a date custom field). Read-only
       // sources (created/updated) yield no preset.
       const preset = presetForDateSource(this.opts.context.dateField, this.iso);
-      const modalOpts: any = Object.keys(preset).length ? { preset } : {};
+      const modalOpts: QuickTaskOptions = Object.keys(preset).length ? { preset } : {};
       const loc = this.opts.state.location;
       if (loc.kind === "list") modalOpts.listPath = loc.path;
       else if (loc.kind === "folder") modalOpts.scopeFolderPath = loc.path;
@@ -583,7 +591,7 @@ function renderCellHead(
     // pre-fills (due_date, start_date, or a date custom field). Read-only
     // sources (created/updated) yield no preset.
     const preset = presetForDateSource(opts.context.dateField, cellIso);
-    const modalOpts: any = Object.keys(preset).length ? { preset } : {};
+    const modalOpts: QuickTaskOptions = Object.keys(preset).length ? { preset } : {};
     const loc = state.location;
     if (loc.kind === "list") modalOpts.listPath = loc.path;
     else if (loc.kind === "folder") modalOpts.scopeFolderPath = loc.path;
@@ -661,7 +669,7 @@ function renderPill(parent: HTMLElement, entry: PillEntry, opts: RenderOpts) {
     if (isVis(opts, "type_icon")) {
       const ttype = context.taskTypesOrder.find((x) => x.id === t.data.type);
       const wrap = head.createSpan({ cls: "it-cal-pill-type" });
-      const icon = renderIconish(wrap, (ttype as any)?.icon || typeEmoji(t.data.type), { cls: "it-cal-pill-type-icon" });
+      const icon = renderIconish(wrap, ttype?.icon || typeEmoji(t.data.type), { cls: "it-cal-pill-type-icon" });
       if (icon && ttype?.color) icon.style.color = ttype.color;
     }
     if ((isVis(opts, "custom_id") || isVis(opts, "id"))) {
@@ -697,7 +705,7 @@ function renderPill(parent: HTMLElement, entry: PillEntry, opts: RenderOpts) {
       // box (e.g. a long linked-tasks chip), making the translucent ghost bleed
       // into the neighbouring day cells.
       const rect = pill.getBoundingClientRect();
-      const cell = pill.closest(".it-cal-cell") as HTMLElement | null;
+      const cell = pill.closest<HTMLElement>(".it-cal-cell");
       const w = Math.round(Math.min(rect.width, cell ? cell.clientWidth : rect.width));
       const ghost = pill.cloneNode(true) as HTMLElement;
       Object.assign(ghost.style, {
@@ -784,14 +792,14 @@ function renderField(parent: HTMLElement, field: string, t: TaskFile, opts: Rend
     const id = field.slice("custom_field:".length);
     const cf = context.customFields.find((x) => x.id === id);
     if (!cf) return;
-    const raw = effectiveCustomFieldValue(t, cf, { subtaskStats: context.subtaskStats });
+    const raw: unknown = effectiveCustomFieldValue(t, cf, { subtaskStats: context.subtaskStats });
     const isEmpty = isEmptyCustomFieldValue(raw);
     // Resolved once in tasksContext (transient override ⊕ inherited config).
     const showWhenEmpty = context.cfShowWhenEmpty ?? false;
     const showName = context.cfShowName ?? false;
     if (isEmpty && !showWhenEmpty) return;
     const wrap = parent.createSpan({ cls: "it-chip it-chip-meta it-cal-cf-chip" });
-    if ((context as any).showFieldIcons) renderCfTypeIcon(wrap, cf.type); // colored type icon leads the chip
+    if (context.showFieldIcons) renderCfTypeIcon(wrap, cf.type); // colored type icon leads the chip
     if (showName) wrap.createSpan({ text: `${cf.name}: `, cls: "it-cal-cf-label" });
     if (!isEmpty) renderCustomFieldValue(wrap, cf, raw, { task: t, index: opts.plugin.index, mode: "calendar", chipStyles: context.chipStyles, subtaskStats: context.subtaskStats });
     return;
@@ -820,7 +828,7 @@ function resolvePillColor(t: TaskFile, ctx: CalendarContext): string {
       if (!cf || !cf.options?.length) return undefined;
       const raw = t.data.custom_fields?.[id];
       // dropdown → single string; labels → array; both pick the first present value.
-      const value = Array.isArray(raw) ? raw[0] : raw;
+      const value = (Array.isArray(raw) ? raw[0] : raw) as string | number | boolean | null | undefined;
       if (value === undefined || value === null || value === "") return undefined;
       const str = String(value);
       const opt = cf.options.find((o) => (o.value ?? o.label) === str || o.label === str);
@@ -850,13 +858,13 @@ function attachDayDnd(cell: HTMLElement, cellDate: Date, opts: RenderOpts) {
   if (!isDateSourceWritable(dateField, DATE_SOURCE_DUE)) return;
   cell.addEventListener("dragover", (e) => { e.preventDefault(); cell.addClass("is-drop-target"); });
   cell.addEventListener("dragleave", () => cell.removeClass("is-drop-target"));
-  cell.addEventListener("drop", async (e) => {
+  cell.addEventListener("drop", fireAndForget(async (e) => {
     e.preventDefault();
     cell.removeClass("is-drop-target");
     const id = e.dataTransfer?.getData("text/plain");
     if (!id) return;
-    await plugin.index.updateTask(id, (d) => ({ data: { ...d, ...mapDatePatch(d, { due_date: isoDate(cellDate) }, undefined, dateField) } }));
-  });
+    await plugin.index.updateTask(id, (d: TaskData) => ({ data: { ...d, ...mapDatePatch(d, { due_date: isoDate(cellDate) }, undefined, dateField) } }));
+  }));
 }
 
 function typeEmoji(type?: string): string {

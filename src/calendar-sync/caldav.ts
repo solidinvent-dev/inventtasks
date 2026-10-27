@@ -218,7 +218,7 @@ export async function testCalDav(config: CalDavConfig): Promise<string | null> {
     if (resp.status === 404) return "Server not found. Check server URL.";
     if (resp.status === 207 || resp.status === 200) return null;
     return `Unexpected response: HTTP ${resp.status}`;
-  } catch (e: any) {
-    return e?.message || String(e);
+  } catch (e) {
+    return (e as Error | undefined)?.message || String(e);
   }
 }

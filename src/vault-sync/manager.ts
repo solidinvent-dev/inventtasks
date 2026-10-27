@@ -457,7 +457,7 @@ export class VaultSyncManager {
     };
     socket.onmessage = (ev) => {
       let msg: WatchServerMessage | null = null;
-      try { msg = JSON.parse(String(ev.data)); } catch { return; }
+      try { msg = JSON.parse(String(ev.data)) as WatchServerMessage | null; } catch { return; }
       if (!msg || !this.state) return;
       if (msg.type === "changes" && msg.rev > this.state.cursor) {
         void this.runSync({ wsChanges: { since: msg.since, rev: msg.rev, files: msg.files } });

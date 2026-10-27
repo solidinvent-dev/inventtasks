@@ -177,7 +177,7 @@ export class DocPickerModal extends Modal {
       if (this.selected.has(d.doc_id)) this.selected.delete(d.doc_id);
       else this.selected.add(d.doc_id);
       el.toggleClass("is-selected", this.selected.has(d.doc_id));
-      const cb = el.querySelector("input.it-task-picker-check") as HTMLInputElement | null;
+      const cb = el.querySelector<HTMLInputElement>("input.it-task-picker-check");
       if (cb) cb.checked = this.selected.has(d.doc_id);
       if (confirmBtn) {
         confirmBtn.disabled = this.selected.size === 0;

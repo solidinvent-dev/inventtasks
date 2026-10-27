@@ -1,6 +1,7 @@
 import { setIcon, Setting } from "obsidian";
 import { showPopover } from "./components";
 import { renderIconish } from "./icons";
+import { fireAndForget } from "../utils/async";
 import { pickerCategoryLabel, t } from "../i18n";
 
 // Centralised palettes used by both the color and icon pickers.
@@ -139,7 +140,7 @@ export function openColorPicker(
       attr: { type: "button", "aria-label": t("pickerUi.copyClipboard"), title: t("pickerUi.copyClipboard") },
     });
     setIcon(copyBtn, "copy");
-    copyBtn.addEventListener("click", async (e) => {
+    copyBtn.addEventListener("click", fireAndForget(async (e: MouseEvent) => {
       e.preventDefault();
       e.stopPropagation();
       const v = input.value.trim() || current;
@@ -149,7 +150,7 @@ export function openColorPicker(
         copyBtn.addClass("it-just-copied");
         window.setTimeout(() => copyBtn.removeClass("it-just-copied"), 800);
       } catch { /* clipboard unavailable */ }
-    });
+    }));
   });
 }
 

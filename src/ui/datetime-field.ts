@@ -25,13 +25,13 @@ import { formatDate, formatTimeOfDay, uses24HourTime } from "../utils/dates";
 export type DateTimeInputKind = "date" | "time" | "datetime";
 
 export interface DateTimeInputHandle {
-  reset(value: any): void;
+  reset(value: unknown): void;
 }
 
 export interface RenderDateTimeInputOptions {
   parent: HTMLElement;
   kind: DateTimeInputKind;
-  value: any;
+  value: unknown;
   onCommit: (value: string | null, handle: DateTimeInputHandle) => void;
   pairClass?: string;
   dateClass?: string;
@@ -65,7 +65,7 @@ export function attachDateTimeOverlay(input: HTMLInputElement, kind: "date" | "t
     e.preventDefault();
     e.stopPropagation();
     input.focus();
-    try { (input as any).showPicker?.(); } catch { /* unsupported — focus opens it on mobile */ }
+    try { (input as { showPicker?: () => void }).showPicker?.(); } catch { /* unsupported — focus opens it on mobile */ }
   });
 
   // Formatted value, shown at rest; hidden on focus so the native editable
@@ -89,16 +89,16 @@ export function attachDateTimeOverlay(input: HTMLInputElement, kind: "date" | "t
   paint();
 }
 
-export function splitDateTimeValue(value: any): { date: string; time: string } {
-  const s = String(value ?? "");
+export function splitDateTimeValue(value: unknown): { date: string; time: string } {
+  const s = String((value as string | null | undefined) ?? "");
   if (!s) return { date: "", time: "" };
   const [date, time = ""] = s.split("T");
   return { date: date.slice(0, 10), time: time.slice(0, 5) };
 }
 
-export function normalizeDateTimeInputValue(value: any, kind: DateTimeInputKind): string {
+export function normalizeDateTimeInputValue(value: unknown, kind: DateTimeInputKind): string {
   if (kind === "datetime") return splitDateTimeValue(value).date;
-  const s = String(value ?? "");
+  const s = String((value as string | null | undefined) ?? "");
   if (!s) return "";
   if (kind === "date") return s.slice(0, 10);
   return s.slice(0, 5);
@@ -136,7 +136,7 @@ export function renderDateTimeInput(opts: RenderDateTimeInputOptions): DateTimeI
     });
     attachDateTimeOverlay(date, "date");
     attachDateTimeOverlay(time, "time");
-    const applyValue = (next: any) => {
+    const applyValue = (next: unknown) => {
       const parts = splitDateTimeValue(next);
       date.value = parts.date;
       time.value = parts.time;

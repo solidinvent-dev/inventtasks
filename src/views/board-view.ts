@@ -1,17 +1,32 @@
 import { Notice, Platform } from "obsidian";
 import type InventTasksPlugin from "../main";
-import { TaskFile, StatusDef, PriorityDef, CustomFieldDef } from "../types";
+import { TaskData, TaskFile, StatusDef, PriorityDef, CustomFieldDef, ResolvedChipStyles } from "../types";
 import { renderCustomFieldValue } from "../ui/cf-render";
 import { ViewState } from "./main-view";
-import { groupTasks, GroupBucket } from "../data/filters";
+import { groupTasks, GroupBucket, GroupContext } from "../data/filters";
 import { statusChip, priorityChip, tagChip, applyChipStyleByKind, chipKindForGroupBy, renderGroupHeaderChip, renderListReference } from "../ui/components";
 import { isOverdue, formatDate } from "../utils/dates";
 import { renderIconish, renderCfTypeIcon } from "../ui/icons";
-import { QuickTaskModal } from "../modals/create-modals";
+import { QuickTaskModal, type QuickTaskOptions } from "../modals/create-modals";
 import { t as tr } from "../i18n";
 import { applyCoverBackground } from "../data/attachments";
 import { descriptionPreview } from "../data/description-preview";
 import { effectiveCustomFieldValue, isEmptyCustomFieldValue } from "../data/custom-fields";
+import { fireAndForget } from "../utils/async";
+
+// The render context main-view's tasksContext() hands every view; the board
+// reads only these members (the optional ones may be absent).
+interface BoardContext extends GroupContext {
+  statuses: StatusDef[];
+  priorities: PriorityDef[];
+  priorityLabels: Record<number, string>;
+  visibleFields: string[];
+  chipStyles?: ResolvedChipStyles;
+  relationshipCounts?: Map<string, number>;
+  cfShowName?: boolean;
+  cfShowWhenEmpty?: boolean;
+  showFieldIcons?: boolean;
+}
 
 interface RenderOpts {
   parent: HTMLElement;
@@ -19,8 +34,16 @@ interface RenderOpts {
   state: ViewState;
   plugin: InventTasksPlugin;
   onTaskClick: (t: TaskFile) => void;
-  context: { statuses: StatusDef[]; priorities: PriorityDef[]; priorityLabels: Record<number, string>; visibleFields: string[] };
+  context: BoardContext;
 }
+
+// Per-column "show more" counts stashed on the transient view state.
+interface BoardViewState {
+  __boardVisibleByColumn?: Record<string, number>;
+}
+
+/** A partial task-data patch derived from a board bucket (status, priority, tags, custom_fields, ...). */
+export type GroupPatch = { [key: string]: unknown; custom_fields?: Record<string, unknown> };
 
 function vis(opts: RenderOpts, f: string): boolean { return opts.context.visibleFields.includes(f); }
 const BOARD_INITIAL_CARDS = 80;
@@ -40,17 +63,17 @@ export function renderBoardView(opts: RenderOpts) {
     statuses: context.statuses,
     priorities: context.priorities,
     priorityLabels: context.priorityLabels,
-    tagsOrder: (context as any).tagsOrder,
-    contextOrder: (context as any).contextOrder,
-    taskTypesOrder: (context as any).taskTypesOrder,
-    tagsPalette: (context as any).tagsPalette,
-    contextLabels: (context as any).contextLabels,
-    customFields: (context as any).customFields,
-    listMeta: (context as any).listMeta,
-    subtaskStats: (context as any).subtaskStats,
-    taskTitles: (context as any).taskTitles,
-    emptyPositions: (context as any).emptyPositions,
-        fieldLabels: (context as any).fieldLabels,
+    tagsOrder: context.tagsOrder,
+    contextOrder: context.contextOrder,
+    taskTypesOrder: context.taskTypesOrder,
+    tagsPalette: context.tagsPalette,
+    contextLabels: context.contextLabels,
+    customFields: context.customFields,
+    listMeta: context.listMeta,
+    subtaskStats: context.subtaskStats,
+    taskTitles: context.taskTitles,
+    emptyPositions: context.emptyPositions,
+        fieldLabels: context.fieldLabels,
     direction: state.groupDirection,
   };
 
@@ -84,8 +107,8 @@ export function renderBoardView(opts: RenderOpts) {
 }
 
 // Header for a swimlane row — styled chip (or dot + label) + count, pinned left.
-function renderSwimlaneHeader(head: HTMLElement, swim: GroupBucket, subField: string, context: any) {
-  const kind = chipKindForGroupBy(subField, (id) => context.customFields?.find((f: any) => f.id === id)?.type);
+function renderSwimlaneHeader(head: HTMLElement, swim: GroupBucket, subField: string, context: BoardContext) {
+  const kind = chipKindForGroupBy(subField, (id) => context.customFields?.find((f) => f.id === id)?.type);
   if (kind) {
     renderGroupHeaderChip(head, swim, kind, context.chipStyles);
   } else {
@@ -112,10 +135,10 @@ function renderColumn(container: HTMLElement, bucket: GroupBucket, cards: TaskFi
 
   const header = col.createDiv({ cls: "it-board-col-header" });
   const kind = chipKindForGroupBy(groupBy, (id) =>
-    (context as any).customFields?.find((f: any) => f.id === id)?.type,
+    context.customFields?.find((f) => f.id === id)?.type,
   );
   if (kind) {
-    renderGroupHeaderChip(header, bucket, kind, (context as any).chipStyles);
+    renderGroupHeaderChip(header, bucket, kind, context.chipStyles);
   } else {
     // Non-chip axis (e.g. List): show the group icon when present, else a dot.
     if (bucket.icon) {
@@ -132,15 +155,15 @@ function renderColumn(container: HTMLElement, bucket: GroupBucket, cards: TaskFi
   const list = col.createDiv({ cls: "it-board-col-body" });
 
   // Drop/Add value = primary axis ⊕ swimlane axis.
-  const customFields = (context as any).customFields as CustomFieldDef[] | undefined;
-  const cellPatch = (): any => mergeGroupPatches(
+  const customFields = context.customFields;
+  const cellPatch = (): GroupPatch => mergeGroupPatches(
     computeGroupSet(groupBy, bucket.key, customFields),
     swim ? computeGroupSet(swim.field, swim.key, customFields) : {},
   );
 
   col.addEventListener("dragover", (e) => { e.preventDefault(); list.addClass("is-drop-target"); });
   col.addEventListener("dragleave", () => list.removeClass("is-drop-target"));
-  col.addEventListener("drop", async (e) => {
+  col.addEventListener("drop", fireAndForget(async (e) => {
     e.preventDefault();
     list.removeClass("is-drop-target");
     const taskId = e.dataTransfer?.getData("text/plain");
@@ -148,14 +171,14 @@ function renderColumn(container: HTMLElement, bucket: GroupBucket, cards: TaskFi
     const patch = cellPatch();
     if (Object.keys(patch).length === 0) return;
     try {
-      await plugin.index.updateTask(taskId, (d) => ({ data: applyGroupPatch(d, patch) }));
-    } catch (err: any) {
-      new Notice(tr("board.dropFailed", { msg: err.message }));
+      await plugin.index.updateTask(taskId, (d: TaskData) => ({ data: applyGroupPatch(d, patch) }));
+    } catch (err) {
+      new Notice(tr("board.dropFailed", { msg: (err as Error).message }));
     }
-  });
+  }));
 
   const visibleKey = `${swim ? `${swim.field}:${swim.key}|` : ""}${groupBy}:${bucket.key}`;
-  const visibleByColumn = ((state as any).__boardVisibleByColumn ||= {}) as Record<string, number>;
+  const visibleByColumn = ((state as BoardViewState).__boardVisibleByColumn ||= {});
   const visibleCount = Math.min(cards.length, visibleByColumn[visibleKey] || BOARD_INITIAL_CARDS);
   for (const t of cards.slice(0, visibleCount)) renderCard(list, t, opts);
   if (visibleCount < cards.length) {
@@ -183,7 +206,7 @@ function renderColumn(container: HTMLElement, bucket: GroupBucket, cards: TaskFi
   addBtn.addEventListener("click", (e) => {
     e.preventDefault();
     e.stopPropagation();
-    const modalOpts: any = { preset: cellPatch() };
+    const modalOpts: QuickTaskOptions = { preset: cellPatch() };
     const loc = state.location;
     if (loc.kind === "list") modalOpts.listPath = loc.path;
     else if (loc.kind === "folder") modalOpts.scopeFolderPath = loc.path;
@@ -249,7 +272,7 @@ function renderCard(parent: HTMLElement, t: TaskFile, opts: RenderOpts) {
   // ordering in View defaults is honored. Each field uses the SAME chip helpers
   // as List view → identical colors, icons, sizing.
   const fields = card.createDiv({ cls: "it-card-fields" });
-  const customFields = (opts.context as any).customFields as Array<{ id: string; name: string }> | undefined;
+  const customFields = opts.context.customFields;
 
   // Skip these fields here — they've already been rendered above (or below).
   const renderedAlready = new Set(["cover", "type_icon", "id", "custom_id", "checkbox", "description_preview"]);
@@ -276,7 +299,7 @@ function renderField(
   opts: RenderOpts,
   customFields?: Array<{ id: string; name: string }>
 ) {
-  const chipStyles = (opts.context as any).chipStyles;
+  const chipStyles = opts.context.chipStyles;
   if (field === "status") {
     const so = opts.context.statuses.find((s) => s.id === t.data.status);
     statusChip(parent, so, undefined, chipStyles);
@@ -319,12 +342,12 @@ function renderField(
     return;
   }
   if (field === "subtask_count") {
-    const c = (opts.context as any).subtaskStats?.get(t.data.id)?.total ?? 0;
+    const c = opts.context.subtaskStats?.get(t.data.id)?.total ?? 0;
     if (c > 0) parent.createSpan({ cls: "it-chip it-chip-meta", text: `↳ ${c}` });
     return;
   }
   if (field === "relationship_count") {
-    const c = (opts.context as any).relationshipCounts?.get(t.data.id) ?? 0;
+    const c = opts.context.relationshipCounts?.get(t.data.id) ?? 0;
     if (c > 0) parent.createSpan({ cls: "it-chip it-chip-meta", text: `🔗 ${c}` });
     return;
   }
@@ -348,16 +371,16 @@ function renderField(
     const id = field.slice("custom_field:".length);
     const cf = (customFields as CustomFieldDef[] | undefined)?.find((x) => x.id === id);
     if (!cf) return;
-    const raw = effectiveCustomFieldValue(t, cf, { subtaskStats: (opts.context as any).subtaskStats });
+    const raw: unknown = effectiveCustomFieldValue(t, cf, { subtaskStats: opts.context.subtaskStats });
     const isEmpty = isEmptyCustomFieldValue(raw);
     // Resolved once in tasksContext (transient override ⊕ inherited config).
-    const showWhenEmpty = (opts.context as any).cfShowWhenEmpty ?? true;
-    const showName = (opts.context as any).cfShowName ?? true;
+    const showWhenEmpty = opts.context.cfShowWhenEmpty ?? true;
+    const showName = opts.context.cfShowName ?? true;
     if (isEmpty && !showWhenEmpty) return;
     const wrap = parent.createSpan({ cls: "it-chip it-chip-meta it-board-cf-chip" });
-    if ((opts.context as any).showFieldIcons) renderCfTypeIcon(wrap, cf.type); // colored type icon leads the chip
+    if (opts.context.showFieldIcons) renderCfTypeIcon(wrap, cf.type); // colored type icon leads the chip
     if (showName) wrap.createSpan({ text: `${cf.name}: `, cls: "it-board-cf-label" });
-    if (!isEmpty) renderCustomFieldValue(wrap, cf, raw, { task: t, index: opts.plugin.index, mode: "board", chipStyles, subtaskStats: (opts.context as any).subtaskStats });
+    if (!isEmpty) renderCustomFieldValue(wrap, cf, raw, { task: t, index: opts.plugin.index, mode: "board", chipStyles, subtaskStats: opts.context.subtaskStats });
     return;
   }
 }
@@ -383,7 +406,7 @@ function formatMins(m: number): string {
   return `${h}h${min}m`;
 }
 
-export function computeGroupSet(groupBy: string, bucketKey: string, customFields?: CustomFieldDef[]): any {
+export function computeGroupSet(groupBy: string, bucketKey: string, customFields?: CustomFieldDef[]): GroupPatch {
   if (groupBy === "status") return bucketKey === "__no_status" ? { status: null } : { status: bucketKey };
   if (groupBy === "priority") {
     if (bucketKey === "__no_priority") return { priority: null };
@@ -404,7 +427,7 @@ export function computeGroupSet(groupBy: string, bucketKey: string, customFields
     if (!id) return {};
     if (bucketKey === "__empty") return { custom_fields: { [id]: undefined } };
     const cf = customFields?.find((f) => f.id === id);
-    let value: any = bucketKey;
+    let value: unknown = bucketKey;
     switch (cf?.type) {
       case "number":
       case "money":
@@ -442,14 +465,14 @@ export function computeGroupSet(groupBy: string, bucketKey: string, customFields
 }
 
 /** Combine primary + swimlane patches without dropping either custom field. */
-export function mergeGroupPatches(...patches: any[]): any {
-  const out: any = {};
-  let custom: Record<string, any> | undefined;
+export function mergeGroupPatches(...patches: unknown[]): GroupPatch {
+  const out: GroupPatch = {};
+  let custom: Record<string, unknown> | undefined;
   for (const patch of patches) {
     if (!patch || typeof patch !== "object") continue;
-    for (const [key, value] of Object.entries(patch)) {
+    for (const [key, value] of Object.entries(patch as Record<string, unknown>)) {
       if (key === "custom_fields" && value && typeof value === "object") {
-        custom = { ...(custom || {}), ...(value as Record<string, any>) };
+        custom = { ...(custom || {}), ...(value as Record<string, unknown>) };
       } else {
         out[key] = value;
       }
@@ -460,7 +483,7 @@ export function mergeGroupPatches(...patches: any[]): any {
 }
 
 /** Apply a board bucket patch while preserving unrelated custom-field data. */
-export function applyGroupPatch(data: TaskFile["data"], patch: any): TaskFile["data"] {
+export function applyGroupPatch(data: TaskFile["data"], patch: GroupPatch): TaskFile["data"] {
   const next: TaskFile["data"] = { ...data, ...patch };
   if (patch?.custom_fields && typeof patch.custom_fields === "object") {
     const custom = { ...(data.custom_fields || {}) };

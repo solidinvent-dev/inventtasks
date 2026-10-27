@@ -9,6 +9,7 @@ import { getTemplates, templateSummaryText, TemplateLevel } from "../data/templa
 import { ApplyTemplateModal } from "./template-modals";
 import { t } from "../i18n";
 import { MAX_TASK_TITLE_LENGTH, validateTaskTitle } from "../data/task-values";
+import { fireAndForget } from "../utils/async";
 
 // Shared "Start from" picker — Blank + the templates for a level, with a small
 // preview of the selected template's contents. Renders nothing if there are no
@@ -101,14 +102,14 @@ export class CreateSpaceModal extends Modal {
             .addOption("marketing", t("create.statusMarketing"))
             .addOption("simple", t("create.statusSimple"))
             .setValue(this.template)
-            .onChange((v) => (this.template = v as any))
+            .onChange((v) => (this.template = v))
         );
     }
 
     const actions = c.createDiv({ cls: "it-modal-footer" });
     actions.createEl("button", { text: t("common.cancel"), cls: "it-btn-ghost" }).addEventListener("click", () => this.close());
     const create = actions.createEl("button", { text: t("create.createSpace"), cls: "it-btn-primary" });
-    create.addEventListener("click", async () => {
+    create.addEventListener("click", fireAndForget(async () => {
       if (!this.name.trim()) { new Notice(t("common.nameRequired")); return; }
       try {
         const tpl = this.startFrom !== "blank" ? getTemplates("space").find((t) => t.template_id === this.startFrom) : undefined;
@@ -125,10 +126,10 @@ export class CreateSpaceModal extends Modal {
         await this.plugin.index.scan();
         this.plugin.refreshViews();
         this.close();
-      } catch (e: any) {
-        new Notice(t("common.failed", { msg: e.message }));
+      } catch (e) {
+        new Notice(t("common.failed", { msg: (e as Error).message }));
       }
-    });
+    }));
   }
 }
 
@@ -174,7 +175,7 @@ export class CreateFolderModal extends Modal {
     const actions = c.createDiv({ cls: "it-modal-footer" });
     actions.createEl("button", { text: t("common.cancel"), cls: "it-btn-ghost" }).addEventListener("click", () => this.close());
     const create = actions.createEl("button", { text: t("create.createFolder"), cls: "it-btn-primary" });
-    create.addEventListener("click", async () => {
+    create.addEventListener("click", fireAndForget(async () => {
       if (!this.name.trim()) { new Notice(t("common.nameRequired")); return; }
       try {
         const tpl = this.startFrom !== "blank" ? getTemplates("folder").find((t) => t.template_id === this.startFrom) : undefined;
@@ -187,10 +188,10 @@ export class CreateFolderModal extends Modal {
         await this.plugin.index.scan();
         this.plugin.refreshViews();
         this.close();
-      } catch (e: any) {
-        new Notice(t("common.failed", { msg: e.message }));
+      } catch (e) {
+        new Notice(t("common.failed", { msg: (e as Error).message }));
       }
-    });
+    }));
   }
 }
 
@@ -236,7 +237,7 @@ export class CreateListModal extends Modal {
     const actions = c.createDiv({ cls: "it-modal-footer" });
     actions.createEl("button", { text: t("common.cancel"), cls: "it-btn-ghost" }).addEventListener("click", () => this.close());
     const create = actions.createEl("button", { text: t("create.createList"), cls: "it-btn-primary" });
-    create.addEventListener("click", async () => {
+    create.addEventListener("click", fireAndForget(async () => {
       if (!this.name.trim()) { new Notice(t("common.nameRequired")); return; }
       try {
         const tpl = this.startFrom !== "blank" ? getTemplates("list").find((t) => t.template_id === this.startFrom) : undefined;
@@ -251,10 +252,10 @@ export class CreateListModal extends Modal {
         await this.plugin.index.scan();
         this.plugin.refreshViews();
         this.close();
-      } catch (e: any) {
-        new Notice(t("common.failed", { msg: e.message }));
+      } catch (e) {
+        new Notice(t("common.failed", { msg: (e as Error).message }));
       }
-    });
+    }));
   }
 }
 
@@ -302,7 +303,7 @@ export class CreateDocModal extends Modal {
     const actions = c.createDiv({ cls: "it-modal-footer" });
     actions.createEl("button", { text: t("common.cancel"), cls: "it-btn-ghost" }).addEventListener("click", () => this.close());
     const create = actions.createEl("button", { text: t("create.createDoc"), cls: "it-btn-primary" });
-    create.addEventListener("click", async () => {
+    create.addEventListener("click", fireAndForget(async () => {
       if (!this.name.trim()) { new Notice(t("common.nameRequired")); return; }
       try {
         const isFolder = !!this.plugin.index.findFolder(this.parentPath);
@@ -311,10 +312,10 @@ export class CreateDocModal extends Modal {
         await this.plugin.index.createDoc(this.name.trim(), locArg, locKey, { icon: this.icon, color: this.color });
         this.plugin.refreshViews();
         this.close();
-      } catch (e: any) {
-        new Notice(t("common.failed", { msg: e.message }));
+      } catch (e) {
+        new Notice(t("common.failed", { msg: (e as Error).message }));
       }
-    });
+    }));
   }
 }
 
@@ -332,7 +333,7 @@ export interface QuickTaskOptions {
     start_date?: string;
     // Seed values for date/datetime custom fields (keyed by field id) — used
     // when a calendar placed by a custom date field creates a task on a day.
-    custom_fields?: Record<string, any>;
+    custom_fields?: Record<string, unknown>;
     tags?: string[];
     context?: string[];
     type?: string;
@@ -494,8 +495,8 @@ export class QuickTaskModal extends Modal {
         // Open the full task modal so the user can fine-tune the rest of the fields.
         const fresh = this.plugin.index.tasksById.get(tf.data.id) ?? tf;
         new TaskModal(this.app, this.plugin, fresh, { editDescription: true }).open();
-      } catch (e: any) {
-        new Notice(t("common.failed", { msg: e.message }));
+      } catch (e) {
+        new Notice(t("common.failed", { msg: (e as Error).message }));
       }
     };
 
@@ -507,6 +508,6 @@ export class QuickTaskModal extends Modal {
     const actions = c.createDiv({ cls: "it-modal-footer" });
     actions.createEl("button", { text: t("common.cancel"), cls: "it-btn-ghost" }).addEventListener("click", () => this.close());
     const create = actions.createEl("button", { text: t("common.create"), cls: "it-btn-primary" });
-    create.addEventListener("click", submit);
+    create.addEventListener("click", fireAndForget(submit));
   }
 }

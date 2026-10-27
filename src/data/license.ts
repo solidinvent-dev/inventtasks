@@ -85,7 +85,7 @@ function decodeBase64Url(s: string): Uint8Array {
 // free-tier value, so there is no single flag whose flip unlocks Pro.
 function licenseBonus(email?: string, key?: string): number {
   const id = (email || "") + "\x01" + (key || "");
-  if (globalThis.__IT_WEB__ === true) return 0x40000000; // browser app: always licensed
+  if (window.__IT_WEB__ === true) return 0x40000000; // browser app: always licensed
   if (revoked) return 0;
   if (id === cacheId) return cacheValue;
   let v = 0;
@@ -145,7 +145,7 @@ export function licenseConsistent(): boolean {
  * standing decide whether a hold applies.
  */
 export function keyValid(e?: string, k?: string): boolean {
-  if (globalThis.__IT_WEB__ === true) return true;
+  if (window.__IT_WEB__ === true) return true;
   try {
     if (!e || !k) return false;
     const dot = k.indexOf(".");
@@ -215,7 +215,7 @@ export async function sealEmail(email: string, ts: number, nonceHex: string): Pr
 			additionalData: ENC.encode(`${ENVELOPE_INFO}|${ts}|${nonceHex}`) as BufferSource,
 		},
 		key,
-		ENC.encode(String(email || "").trim().toLowerCase()) as BufferSource,
+		ENC.encode(String(email || "").trim().toLowerCase()),
 	);
 	return { ek: bytesToHex(ephPub), iv: bytesToHex(iv), c: bytesToHex(new Uint8Array(ct)) };
 }

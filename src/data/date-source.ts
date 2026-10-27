@@ -35,7 +35,7 @@ export function isDateSourceWritable(source: string | undefined, fallback: strin
 export function presetForDateSource(
   source: string | undefined,
   iso: string,
-): { due_date?: string; start_date?: string; custom_fields?: Record<string, any> } {
+): { due_date?: string; start_date?: string; custom_fields?: Record<string, unknown> } {
   const f = source || DATE_SOURCE_DUE;
   if (f === DATE_SOURCE_DUE) return { due_date: iso };
   if (f === DATE_SOURCE_START) return { start_date: iso };
@@ -73,7 +73,7 @@ export function mapDatePatch(
   dueSource: string | undefined,
 ): Partial<TaskData> {
   const out: Partial<TaskData> = {};
-  let cfs: Record<string, any> | undefined;
+  let cfs: Record<string, unknown> | undefined;
   const write = (source: string, value: string) => {
     if (source === "due_date") out.due_date = keepTimeOfDay(d.due_date, value);
     else if (source === "start_date") out.start_date = keepTimeOfDay(d.start_date, value);

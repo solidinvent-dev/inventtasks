@@ -229,9 +229,9 @@ export async function runCalendarSync(
         const missing = missingSyncedTasks(tasks.filter(hasCalendarDate), next, "caldav");
         if (missing) warnings.push(`CalDAV: ${missing} event(s) were not synced`);
         prefs.syncedEvents = mergeTargetSyncedEvents(prefs.syncedEvents, target, next);
-      } catch (e: any) {
+      } catch (e) {
         console.error("[InventTasks] CalDAV sync failed:", e);
-        errors.push(`CalDAV: ${e?.message || e}`);
+        errors.push(`CalDAV: ${(e as Error | undefined)?.message || e}`);
       }
     }
   }
@@ -242,9 +242,9 @@ export async function runCalendarSync(
       // Single global ICS at the vault root — calendar config is plugin-wide and
       // this file aggregates every workspace's tasks.
       await app.vault.adapter.write(ICS_FILENAME, icsContent);
-    } catch (e: any) {
+    } catch (e) {
       console.error("[InventTasks] ICS file generation failed:", e);
-      errors.push(`ICS: ${e?.message || e}`);
+      errors.push(`ICS: ${(e as Error | undefined)?.message || e}`);
     }
   }
 

@@ -1,6 +1,6 @@
 import { App, Modal, Notice, Setting, setIcon } from "obsidian";
 import type InventTasksPlugin from "../main";
-import { ExportScope, BackupBundle } from "../data/export";
+import { ExportScope, BackupBundle, BackupTask, BackupList, BackupFolder, BackupSpace } from "../data/export";
 import { ImportDestination } from "../data/import";
 import {
   getTemplates, deleteTemplate, updateTemplate, templateSummaryText, TemplateFile, TemplateLevel,
@@ -11,6 +11,7 @@ import { renderIconRow } from "../ui/pickers";
 import { renderIconish } from "../ui/icons";
 import { ConfirmModal } from "./confirm-modal";
 import { t } from "../i18n";
+import { fireAndForget } from "../utils/async";
 
 function tplConfigLabel(key: string): string {
   return t(`template.config.${key}`) || key;
@@ -26,9 +27,9 @@ export function renderElementSelector(parent: HTMLElement, bundle: BackupBundle,
   const setExcluded = (key: string, on: boolean) => { if (on) sel.excluded.delete(key); else sel.excluded.add(key); };
   const bundleHasTasks = (() => {
     let n = false;
-    const wl = (bl: any) => { if (bl.tasks?.length) n = true; };
-    const wf = (bf: any) => (bf.lists || []).forEach(wl);
-    const ws = (bs: any) => { (bs.folders || []).forEach(wf); (bs.lists || []).forEach(wl); };
+    const wl = (bl: BackupList) => { if (bl.tasks?.length) n = true; };
+    const wf = (bf: BackupFolder) => (bf.lists || []).forEach(wl);
+    const ws = (bs: BackupSpace) => { (bs.folders || []).forEach(wf); (bs.lists || []).forEach(wl); };
     if (bundle.spaces) bundle.spaces.forEach(ws);
     if (bundle.space) ws(bundle.space);
     if (bundle.folder) wf(bundle.folder);
@@ -78,9 +79,9 @@ export function renderElementSelector(parent: HTMLElement, bundle: BackupBundle,
   const build = () => {
     // Preserve the contents/subtask tree scroll across the rebuild that every
     // checkbox toggle triggers, so the list doesn't jump to the top.
-    const prevTreeScroll = (parent.querySelector(".it-tpl-sel-tree") as HTMLElement | null)?.scrollTop ?? 0;
+    const prevTreeScroll = (parent.querySelector<HTMLElement>(".it-tpl-sel-tree"))?.scrollTop ?? 0;
     const restoreTree = () => {
-      const t = parent.querySelector(".it-tpl-sel-tree") as HTMLElement | null;
+      const t = parent.querySelector<HTMLElement>(".it-tpl-sel-tree");
       if (t && prevTreeScroll > 0) { t.scrollTop = prevTreeScroll; window.requestAnimationFrame(() => { t.scrollTop = prevTreeScroll; }); }
     };
     parent.empty();
@@ -113,20 +114,20 @@ export function renderElementSelector(parent: HTMLElement, bundle: BackupBundle,
     // Contents tree (children of the scope root — the root is the item being created).
     parent.createDiv({ cls: "it-tpl-sel-title", text: t("template.contents") });
     const tree = parent.createDiv({ cls: "it-tpl-sel-tree" });
-    const taskRow = (depth: number, task: any, pEx: boolean) => treeRow(tree, depth, "circle", task.data.title || t("common.untitled"), `t:${task.data.id}`, pEx, build);
-    const listRow = (depth: number, bl: any, pEx: boolean) => {
+    const taskRow = (depth: number, task: BackupTask, pEx: boolean) => treeRow(tree, depth, "circle", task.data.title || t("common.untitled"), `t:${task.data.id}`, pEx, build);
+    const listRow = (depth: number, bl: BackupList, pEx: boolean) => {
       const key = `l:${bl.srcPath}`;
       treeRow(tree, depth, "list", bl.config.name, key, pEx, build);
       const ex = pEx || sel.excluded.has(key);
       for (const t of bl.tasks || []) taskRow(depth + 1, t, ex);
     };
-    const folderRow = (depth: number, bf: any, pEx: boolean) => {
+    const folderRow = (depth: number, bf: BackupFolder, pEx: boolean) => {
       const key = `f:${bf.srcPath}`;
       treeRow(tree, depth, "folder", bf.config.name, key, pEx, build);
       const ex = pEx || sel.excluded.has(key);
       for (const bl of bf.lists || []) listRow(depth + 1, bl, ex);
     };
-    const spaceRow = (depth: number, bs: any, pEx: boolean) => {
+    const spaceRow = (depth: number, bs: BackupSpace, pEx: boolean) => {
       const key = `s:${bs.srcPath}`;
       treeRow(tree, depth, "box", bs.config.name, key, pEx, build);
       const ex = pEx || sel.excluded.has(key);
@@ -177,9 +178,9 @@ export class SaveTemplateModal extends Modal {
     this.contentEl.createEl("p", { cls: "setting-item-description", text: t("common.loading") });
     try {
       this.bundle = await buildTemplateBundle(this.plugin, this.tplScope, this.ref);
-    } catch (e: any) {
+    } catch (e) {
       this.contentEl.empty();
-      this.contentEl.createEl("p", { cls: "it-export-error", text: t("template.saveFailed", { msg: e?.message ?? String(e) }) });
+      this.contentEl.createEl("p", { cls: "it-export-error", text: t("template.saveFailed", { msg: (e as Error | undefined)?.message ?? String(e) }) });
       return;
     }
     const c = this.contentEl;
@@ -202,17 +203,17 @@ export class SaveTemplateModal extends Modal {
     const footer = c.createDiv({ cls: "it-modal-footer" });
     footer.createEl("button", { text: t("common.cancel"), cls: "it-btn-ghost" }).addEventListener("click", () => this.close());
     const save = footer.createEl("button", { text: t("template.saveBtn"), cls: "it-btn-primary" });
-    save.addEventListener("click", async () => {
+    save.addEventListener("click", fireAndForget(async () => {
       if (!this.name.trim()) { new Notice(t("template.nameRequired")); return; }
       try {
         if (!this.bundle) return;
         const pruned = pruneBundle(this.bundle, this.sel);
         await saveTemplateBundle(this.plugin, this.tplScope as TemplateLevel, pruned, { name: this.name, description: this.description, icon: this.icon });
         this.close();
-      } catch (e: any) {
-        new Notice(t("template.saveFailed", { msg: e?.message ?? String(e) }));
+      } catch (e) {
+        new Notice(t("template.saveFailed", { msg: (e as Error | undefined)?.message ?? String(e) }));
       }
-    });
+    }));
   }
 }
 
@@ -248,16 +249,16 @@ export class ApplyTemplateModal extends Modal {
     const footer = c.createDiv({ cls: "it-modal-footer" });
     footer.createEl("button", { text: t("common.cancel"), cls: "it-btn-ghost" }).addEventListener("click", () => this.close());
     const apply = footer.createEl("button", { text: t("common.create"), cls: "it-btn-primary" });
-    apply.addEventListener("click", async () => {
+    apply.addEventListener("click", fireAndForget(async () => {
       try {
         const pruned = pruneBundle(this.tpl.bundle, this.sel);
         await instantiateBundle(this.plugin, pruned, this.dest, this.topName);
         this.close();
         this.onDone();
-      } catch (e: any) {
-        new Notice(t("template.applyFailed", { msg: e?.message ?? String(e) }));
+      } catch (e) {
+        new Notice(t("template.applyFailed", { msg: (e as Error | undefined)?.message ?? String(e) }));
       }
-    });
+    }));
   }
 }
 
@@ -272,19 +273,19 @@ function renderBundleTree(parent: HTMLElement, tpl: TemplateFile) {
     r.createSpan({ text });
     if (muted) r.createSpan({ cls: "it-tpl-tree-muted", text: ` · ${muted}` });
   };
-  const renderList = (bl: any, depth: number) => {
+  const renderList = (bl: BackupList, depth: number) => {
     line(depth, "list", bl.config.name, t("common.tasks", { count: bl.tasks?.length || 0 }));
     for (const task of (bl.tasks || []).slice(0, 8)) line(depth + 1, "circle", task.data.title || t("common.untitled"));
     if ((bl.tasks?.length || 0) > 8) line(depth + 1, null, t("common.moreItems", { count: bl.tasks.length - 8 }));
   };
-  const renderFolder = (bf: any, depth: number) => {
+  const renderFolder = (bf: BackupFolder, depth: number) => {
     line(depth, "folder", bf.config.name, t("common.lists", { count: bf.lists?.length || 0 }));
-    (bf.lists || []).forEach((bl: any) => renderList(bl, depth + 1));
+    (bf.lists || []).forEach((bl: BackupList) => renderList(bl, depth + 1));
   };
-  const renderSpace = (bs: any, depth: number) => {
+  const renderSpace = (bs: BackupSpace, depth: number) => {
     line(depth, "box", bs.config.name);
-    (bs.folders || []).forEach((bf: any) => renderFolder(bf, depth + 1));
-    (bs.lists || []).forEach((bl: any) => renderList(bl, depth + 1));
+    (bs.folders || []).forEach((bf: BackupFolder) => renderFolder(bf, depth + 1));
+    (bs.lists || []).forEach((bl: BackupList) => renderList(bl, depth + 1));
   };
   if (b.spaces) b.spaces.forEach((s) => renderSpace(s, 0));
   if (b.space) renderSpace(b.space, 0);
@@ -316,7 +317,7 @@ export class TemplateManagerModal extends Modal {
 
   private render() {
     const c = this.contentEl;
-    const prevListScroll = (c.querySelector(".it-tpl-mgr-list") as HTMLElement | null)?.scrollTop ?? 0;
+    const prevListScroll = (c.querySelector<HTMLElement>(".it-tpl-mgr-list"))?.scrollTop ?? 0;
     c.empty();
     const templates = getTemplates();
     if (templates.length === 0) {
@@ -364,7 +365,7 @@ export class TemplateManagerModal extends Modal {
     if (tpl.description) pane.createEl("p", { cls: "setting-item-description", text: tpl.description });
     pane.createEl("p", { cls: "it-tpl-mgr-created", text: t("template.created", { date: new Date(tpl.createdAt).toLocaleString() }) });
 
-    pane.createEl("div", { cls: "it-tpl-mgr-tree-title", text: t("template.contents") });
+    pane.createDiv({ cls: "it-tpl-mgr-tree-title", text: t("template.contents") });
     renderBundleTree(pane, tpl);
 
     const actions = pane.createDiv({ cls: "it-modal-footer" });
@@ -377,7 +378,7 @@ export class TemplateManagerModal extends Modal {
         message: t("template.deleteMsg", { name: tpl.name }),
         destructive: true,
         confirmLabel: t("common.delete"),
-        onConfirm: async () => { await deleteTemplate(this.plugin, tpl); this.selectedId = null; this.render(); },
+        onConfirm: fireAndForget(async () => { await deleteTemplate(this.plugin, tpl); this.selectedId = null; this.render(); }),
       }).open();
     });
   }
@@ -396,11 +397,11 @@ export class TemplateManagerModal extends Modal {
 
     const actions = pane.createDiv({ cls: "it-modal-footer" });
     actions.createEl("button", { cls: "it-btn-ghost", text: t("common.cancel") }).addEventListener("click", () => { this.editing = false; this.render(); });
-    actions.createEl("button", { cls: "it-btn-primary", text: t("common.save") }).addEventListener("click", async () => {
+    actions.createEl("button", { cls: "it-btn-primary", text: t("common.save") }).addEventListener("click", fireAndForget(async () => {
       if (!name.trim()) { new Notice(t("common.nameRequired")); return; }
       await updateTemplate(this.plugin, tpl, { name, description, icon });
       this.editing = false;
       this.render();
-    });
+    }));
   }
 }

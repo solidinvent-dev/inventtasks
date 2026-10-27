@@ -94,7 +94,7 @@ export class VaultSyncFs implements SyncFs {
   /** Synthesize a marker entry per leaf-empty folder under the root (skipping
    *  hidden/dot folders — those are config-ish and never shown in Obsidian). */
   private addFolderMarkers(out: Map<string, FsEntry>): void {
-    const loaded = (this.app.vault as any).getAllLoadedFiles?.() as unknown[] | undefined;
+    const loaded = (this.app.vault as unknown as { getAllLoadedFiles?: () => unknown[] }).getAllLoadedFiles?.();
     if (!loaded) return;
     for (const af of loaded) {
       if (!(af instanceof TFolder) || af.children.length > 0) continue;
@@ -191,7 +191,7 @@ export class VaultSyncFs implements SyncFs {
     }
     const existing = this.app.vault.getAbstractFileByPath(abs);
     if (existing instanceof TFile) {
-      await (this.app.vault as any).modifyBinary(existing, data);
+      await this.app.vault.modifyBinary(existing, data);
       return;
     }
     if (this.isHiddenPath(abs)) {
@@ -199,7 +199,7 @@ export class VaultSyncFs implements SyncFs {
       return;
     }
     try {
-      await (this.app.vault as any).createBinary(abs, data);
+      await this.app.vault.createBinary(abs, data);
     } catch {
       // Race (created meanwhile) or API refusal — the adapter always works.
       await this.app.vault.adapter.writeBinary(abs, data);

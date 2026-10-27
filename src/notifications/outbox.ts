@@ -97,9 +97,9 @@ export class NotifOutbox {
       let result: SendResult;
       try {
         result = await group.submissions[0].send(payload);
-      } catch (e: any) {
+      } catch (e) {
         console.error("[InventTasks] Notification send failed:", e);
-        result = { ok: false, message: e?.message || String(e) };
+        result = { ok: false, message: (e as Error | undefined)?.message || String(e) };
       }
       for (const sub of group.submissions) {
         try { sub.onResult(result); } catch (e) { console.error("[InventTasks] Notification result handler failed:", e); }

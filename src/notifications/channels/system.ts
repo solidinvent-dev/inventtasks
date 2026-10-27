@@ -53,7 +53,7 @@ export class SystemChannel {
         tag: payload.clickUrl || undefined,
         requireInteraction: true,
         data: payload.clickUrl ? { clickUrl: payload.clickUrl } : undefined,
-      } as NotificationOptions & { requireInteraction?: boolean });
+      });
       const clickUrl = payload.clickUrl;
       if (clickUrl) {
         notif.onclick = () => {

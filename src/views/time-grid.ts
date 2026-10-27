@@ -207,6 +207,15 @@ export interface TimeViewContext {
   subtaskStats?: Map<string, { total: number; done: number }>;
   relationshipCounts?: Map<string, number>;
   taskTitles?: Map<string, string>;
+  listMeta?: Map<string, { icon?: string; color?: string }>;
+  fieldLabels?: Record<string, string>;
+}
+
+// Scroll offsets the time views stash on the (transient) view state object so
+// a data-driven re-render can restore them.
+export interface TimeScrollState {
+  __tgScrollLeft?: unknown;
+  __tgScrollTop?: unknown;
 }
 
 const COLOR_FALLBACK = "#2196F3";
@@ -230,7 +239,7 @@ export function resolveBarColor(t: TaskFile, ctx: TimeViewContext): string {
       const cf = ctx.customFields.find((c) => c.id === id);
       if (!cf || !cf.options?.length) return undefined;
       const raw = t.data.custom_fields?.[id];
-      const value = Array.isArray(raw) ? raw[0] : raw;
+      const value = (Array.isArray(raw) ? raw[0] : raw) as string | number | boolean | null | undefined;
       if (value === undefined || value === null || value === "") return undefined;
       const str = String(value);
       return cf.options.find((o) => (o.value ?? o.label) === str || o.label === str)?.color;
@@ -247,7 +256,7 @@ export function resolveBarColor(t: TaskFile, ctx: TimeViewContext): string {
 export function taskProgress(t: TaskFile, ctx: TimeViewContext): number {
   for (const cf of ctx.customFields) {
     if (cf.type !== "progress_manual" && cf.type !== "progress_auto") continue;
-    const raw = effectiveCustomFieldValue(t, cf, { subtaskStats: ctx.subtaskStats });
+    const raw: unknown = effectiveCustomFieldValue(t, cf, { subtaskStats: ctx.subtaskStats });
     if (raw !== undefined && raw !== null && raw !== "") {
       return Math.max(0, Math.min(1, Number(raw) / 100));
     }
@@ -374,8 +383,8 @@ export function renderTimeScaffold(
   if (railViewport && railContentEl) {
     syncRail = () => {
       const scrollbarHeight = Math.max(0, axisScroll.offsetHeight - axisScroll.clientHeight);
-      railContentEl!.style.height = `${opts.bodyHeight + scrollbarHeight}px`;
-      railViewport!.scrollTop = axisScroll.scrollTop;
+      railContentEl.style.height = `${opts.bodyHeight + scrollbarHeight}px`;
+      railViewport.scrollTop = axisScroll.scrollTop;
     };
     axisScroll.addEventListener("scroll", syncRail);
     window.requestAnimationFrame(syncRail);
@@ -443,7 +452,7 @@ function attachRailResize(
 }
 
 function measureRailFitWidth(railHead: HTMLElement, railContent: HTMLElement): number {
-  const measure = document.createElement("div");
+  const measure = createDiv();
   measure.className = "it-tg-rail-measure";
   document.body.appendChild(measure);
   let width = 0;
@@ -468,7 +477,7 @@ export function scrollToKey(scaffold: Scaffold, axis: TimeAxis, key: string, ali
   // canvas area itself (offset 0).
   const railOffset = hs === scaffold.axisScroll
     ? 0
-    : ((scaffold.root.querySelector(".it-tg-rail") as HTMLElement | null)?.offsetWidth ?? 0);
+    : (scaffold.root.querySelector<HTMLElement>(".it-tg-rail")?.offsetWidth ?? 0);
   const base = railOffset + x;
   const target = align === "center" ? Math.max(0, base - w / 2) : Math.max(0, base - axis.pxPerDay);
   hs.scrollLeft = target;

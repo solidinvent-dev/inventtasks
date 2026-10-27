@@ -5,6 +5,7 @@ import { ContextLocation } from "../types";
 import { renderFavoriteChildren } from "./sidebar";
 import { favLocationLabel, FAV_LOCATION_META } from "./favorites";
 import { t } from "../i18n";
+import { fireAndForget } from "../utils/async";
 
 // Favorites docked in Obsidian's right sidebar (alongside Backlinks / Tags /
 // Outline). Reuses the exact left-sidebar favorite rows so icons, colors, names,
@@ -39,7 +40,7 @@ export class InventTasksFavoritesView extends ItemView {
   }
 
   private isViewVisible(): boolean {
-    return (this.containerEl as any).isShown?.() ?? true;
+    return (this.containerEl as HTMLElement & { isShown?: () => boolean }).isShown?.() ?? true;
   }
 
   onResize() {
@@ -74,7 +75,7 @@ export class InventTasksFavoritesView extends ItemView {
           .createDiv({ cls: "it-empty-note", text: t("main.noWorkspacesShort") });
         return;
       }
-      const prevScroll = (container.querySelector(".it-fav-panel-list") as HTMLElement | null)?.scrollTop ?? 0;
+      const prevScroll = container.querySelector<HTMLElement>(".it-fav-panel-list")?.scrollTop ?? 0;
       container.empty();
       const wrap = container.createDiv({ cls: "it-fav-panel" });
 
@@ -99,18 +100,18 @@ export class InventTasksFavoritesView extends ItemView {
       renderFavoriteChildren(list, {
         plugin: this.plugin,
         current,
-        onSelect: async (loc) => {
+        onSelect: fireAndForget(async (loc) => {
           await this.plugin.activateView();
           this.plugin.getMainView()?.selectLocation(loc);
-        },
-        onOpenView: async (v) => {
+        }),
+        onOpenView: fireAndForget(async (v) => {
           await this.plugin.activateView();
           this.plugin.getMainView()?.openSavedView(v);
-        },
-        onOpenTask: async (id) => {
+        }),
+        onOpenTask: fireAndForget(async (id) => {
           await this.plugin.activateView();
           this.plugin.getMainView()?.openFavorite(id);
-        },
+        }),
         collapsedSet: new Set<string>(),
       }, "right");
 

@@ -41,7 +41,7 @@ export interface CfRenderContext {
 export function renderCustomFieldValue(
   parent: HTMLElement,
   field: CustomFieldDef,
-  value: any,
+  value: unknown,
   ctx: CfRenderContext,
 ): void {
   if (isSecretCustomFieldType(field.type)) {
@@ -55,7 +55,7 @@ export function renderCustomFieldValue(
     }
     return renderText(parent, plaintext, ctx.mode);
   }
-  const resolved = field.type === "progress_auto"
+  const resolved: unknown = field.type === "progress_auto"
     ? effectiveCustomFieldValue(ctx.task, field, { subtaskStats: ctx.subtaskStats, allTasks: ctx.subtaskStats ? undefined : ctx.index.allTasks() })
     : value;
   if (isEmptyCustomFieldValue(resolved)) return;
@@ -110,7 +110,7 @@ export function renderCustomFieldValue(
 
 // ----- Per-type renderers -----
 
-function renderText(parent: HTMLElement, value: any, mode: CfDisplayMode): void {
+function renderText(parent: HTMLElement, value: unknown, mode: CfDisplayMode): void {
   // For long text in dense views, truncate with ellipsis; modal shows full.
   const s = String(value);
   const trimmed = mode === "list" || mode === "table"
@@ -125,13 +125,13 @@ function renderTextLike(parent: HTMLElement, s: string): void {
   parent.createSpan({ cls: "it-cf-display", text: s });
 }
 
-function renderNumber(parent: HTMLElement, value: any): void {
+function renderNumber(parent: HTMLElement, value: unknown): void {
   const n = Number(value);
   if (!Number.isFinite(n)) return renderTextLike(parent, String(value));
   parent.createSpan({ cls: "it-cf-display it-cf-number", text: String(n) });
 }
 
-function renderMoney(parent: HTMLElement, value: any, currency?: string): void {
+function renderMoney(parent: HTMLElement, value: unknown, currency?: string): void {
   const n = Number(value);
   if (!Number.isFinite(n)) return renderTextLike(parent, String(value));
   const cur = (currency || "PLN").toUpperCase();
@@ -154,10 +154,11 @@ function renderCheckbox(parent: HTMLElement, checked: boolean): void {
 
 // ----- Linked values (url / email / phone) -----
 
-function normalizeLinked(value: any): LinkedValue | null {
+function normalizeLinked(value: unknown): LinkedValue | null {
   if (typeof value === "string" && value) return { value };
-  if (value && typeof value === "object" && typeof value.value === "string" && value.value) {
-    return { label: value.label, value: value.value };
+  const o = value as { label?: string; value?: unknown } | null | undefined;
+  if (o && typeof o === "object" && typeof o.value === "string" && o.value) {
+    return { label: o.label, value: o.value };
   }
   return null;
 }
@@ -201,7 +202,7 @@ export function buildLinkedHref(kind: "url" | "email" | "phone" | "location", va
   return safeExternalHref(value);
 }
 
-function renderLinked(parent: HTMLElement, value: any, kind: "url" | "email" | "phone" | "location"): void {
+function renderLinked(parent: HTMLElement, value: unknown, kind: "url" | "email" | "phone" | "location"): void {
   const lv = normalizeLinked(value);
   if (!lv) return;
   const href = buildLinkedHref(kind, lv.value);
@@ -221,8 +222,9 @@ function renderLinked(parent: HTMLElement, value: any, kind: "url" | "email" | "
 //   • new LocationValue { label?, url?, lat?, lng? }
 //   • legacy LinkedValue { label?, value } (value = URL or plain address)
 //   • plain string (treated as address label)
-function normalizeLocation(value: any): { displayText: string; href: string; coords?: string } | null {
+function normalizeLocation(value: unknown): { displayText: string; href: string; coords?: string } | null {
   if (!value) return null;
+  const o = value as { label?: string; url?: string; lat?: unknown; lng?: unknown; value?: unknown };
   let label: string | undefined;
   let url: string | undefined;
   let lat: number | undefined;
@@ -233,14 +235,14 @@ function normalizeLocation(value: any): { displayText: string; href: string; coo
   } else if (value && typeof value === "object") {
     if ("url" in value || "lat" in value || "lng" in value) {
       // New LocationValue
-      label = value.label;
-      url = value.url;
-      lat = value.lat != null ? Number(value.lat) : undefined;
-      lng = value.lng != null ? Number(value.lng) : undefined;
-    } else if (typeof value.value === "string" && value.value) {
+      label = o.label;
+      url = o.url;
+      lat = o.lat != null ? Number(o.lat) : undefined;
+      lng = o.lng != null ? Number(o.lng) : undefined;
+    } else if (typeof o.value === "string" && o.value) {
       // Legacy LinkedValue
-      const v: string = value.value;
-      label = value.label;
+      const v: string = o.value;
+      label = o.label;
       if (isSafeLinkHref(v)) url = v;
       else label = label || v;
     }
@@ -265,7 +267,7 @@ function normalizeLocation(value: any): { displayText: string; href: string; coo
   return { displayText, href, coords };
 }
 
-function renderLocation(parent: HTMLElement, value: any): void {
+function renderLocation(parent: HTMLElement, value: unknown): void {
   const loc = normalizeLocation(value);
   if (!loc) return;
   // In all views show only the text label as a clickable link — compact single
@@ -291,7 +293,7 @@ function findOption(options: CustomFieldOption[] | undefined, v: string): Custom
   return options.find((o) => (o.value ?? o.label) === v || o.label === v);
 }
 
-function renderDropdownDisplay(parent: HTMLElement, value: any, field: CustomFieldDef, ctx: CfRenderContext): void {
+function renderDropdownDisplay(parent: HTMLElement, value: unknown, field: CustomFieldDef, ctx: CfRenderContext): void {
   const opt = findOption(field.options, String(value));
   const chip = parent.createSpan({ cls: "it-chip it-chip-tag it-cf-display", text: opt?.label ?? String(value) });
   if (opt?.color) chip.style.setProperty("--chip-color", opt.color);
@@ -301,8 +303,8 @@ function renderDropdownDisplay(parent: HTMLElement, value: any, field: CustomFie
   applyChipStyleByKind(chip, "custom_field", ctx.chipStyles);
 }
 
-function renderLabelsDisplay(parent: HTMLElement, value: any, field: CustomFieldDef, ctx: CfRenderContext): void {
-  const arr: any[] = Array.isArray(value) ? value : [value];
+function renderLabelsDisplay(parent: HTMLElement, value: unknown, field: CustomFieldDef, ctx: CfRenderContext): void {
+  const arr: unknown[] = Array.isArray(value) ? value : [value];
   for (const v of arr) {
     const opt = findOption(field.options, String(v));
     const chip = parent.createSpan({ cls: "it-chip it-chip-tag it-cf-display", text: opt?.label ?? String(v) });
@@ -313,7 +315,7 @@ function renderLabelsDisplay(parent: HTMLElement, value: any, field: CustomField
 
 // ----- Rating -----
 
-function renderRatingDisplay(parent: HTMLElement, value: any, field: CustomFieldDef): void {
+function renderRatingDisplay(parent: HTMLElement, value: unknown, field: CustomFieldDef): void {
   const n = Math.max(0, Math.min(field.scale || 5, Number(value) || 0));
   const icon = field.icon || "★";
   parent.createSpan({ cls: "it-cf-display it-cf-rating", text: icon.repeat(n) + ` (${n}/${field.scale || 5})` });
@@ -332,8 +334,8 @@ function renderProgress(parent: HTMLElement, percent: number): void {
 
 // ----- Relationship -----
 
-function renderRelationshipDisplay(parent: HTMLElement, value: any, idx: WorkspaceIndex): void {
-  const ids: string[] = Array.isArray(value) ? value.filter((x) => typeof x === "string") : [];
+function renderRelationshipDisplay(parent: HTMLElement, value: unknown, idx: WorkspaceIndex): void {
+  const ids: string[] = Array.isArray(value) ? (value as unknown[]).filter((x): x is string => typeof x === "string") : [];
   if (ids.length === 0) return;
   // Render up to 3 inline; show "+N more" for the rest.
   const shown = ids.slice(0, 3);
@@ -348,8 +350,8 @@ function renderRelationshipDisplay(parent: HTMLElement, value: any, idx: Workspa
   }
 }
 
-function renderDocRelationshipDisplay(parent: HTMLElement, value: any, idx: WorkspaceIndex): void {
-  const ids: string[] = Array.isArray(value) ? value.filter((x) => typeof x === "string") : [];
+function renderDocRelationshipDisplay(parent: HTMLElement, value: unknown, idx: WorkspaceIndex): void {
+  const ids: string[] = Array.isArray(value) ? (value as unknown[]).filter((x): x is string => typeof x === "string") : [];
   if (ids.length === 0) return;
   const shown = ids.slice(0, 3);
   for (const id of shown) {
@@ -365,8 +367,8 @@ function renderDocRelationshipDisplay(parent: HTMLElement, value: any, idx: Work
 
 // ----- Attachment -----
 
-function renderAttachmentDisplay(parent: HTMLElement, value: any): void {
-  const list: TaskAttachment[] = Array.isArray(value) ? value : [];
+function renderAttachmentDisplay(parent: HTMLElement, value: unknown): void {
+  const list: TaskAttachment[] = Array.isArray(value) ? (value as TaskAttachment[]) : [];
   if (list.length === 0) return;
   // Compact: paperclip icon + count. Filenames in the modal.
   const span = parent.createSpan({ cls: "it-cf-display it-cf-attachment" });

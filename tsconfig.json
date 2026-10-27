@@ -10,9 +10,13 @@
     "importHelpers": true,
     "isolatedModules": true,
     "strictNullChecks": true,
+    "strictBindCallApply": true,
     "esModuleInterop": true,
     "skipLibCheck": true,
-    "lib": ["DOM", "ES5", "ES6", "ES7", "ES2018"]
+    "lib": ["DOM", "ES2021"],
+    // No ambient @types/*: the plugin runs in Obsidian (desktop and mobile),
+    // not in Node, and the directory's review type-checks without them.
+    "types": []
   },
   "include": ["src/**/*.ts"]
 }

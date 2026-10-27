@@ -391,9 +391,9 @@ export class NotificationCenter {
       if (!accounts.ntfy?.topic) return { ok: false, message: "ntfy topic is not configured." };
       const err = await this.ntfyChannel.send(accounts.ntfy, payload);
       return err ? { ok: false, message: err } : { ok: true };
-    } catch (e: any) {
+    } catch (e) {
       console.error(`[InventTasks] ${channel} send failed:`, e);
-      return { ok: false, message: e?.message || String(e) };
+      return { ok: false, message: (e as Error | undefined)?.message || String(e) };
     }
   }
 }

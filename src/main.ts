@@ -37,6 +37,12 @@ import { SyncPathPickerModal } from "./modals/sync-path-picker-modal";
 import { SecretFieldSession, isEncryptedSecretValue } from "./data/secret-fields";
 import { requestSecretPassword } from "./modals/secret-password-modal";
 import type { SecretFieldValue } from "./types";
+import { fireAndForget } from "./utils/async";
+
+/** Private Obsidian API: the command registry (used to re-register commands). */
+interface AppWithCommands { commands?: { removeCommand(id: string): void } }
+/** Private Obsidian API: the left ribbon's internal item registry. */
+interface WorkspaceWithRibbon { leftRibbon?: { items?: ({ title?: unknown } | null | undefined)[] } }
 
 const PLUGIN_COMMAND_IDS = [
   "open-inventtasks",
@@ -145,7 +151,7 @@ export default class InventTasksPlugin extends Plugin {
     // handleDeepLink awaits the readiness gate, so it's safe to register this
     // early: it won't actually navigate until everything has loaded.
     this.registerObsidianProtocolHandler(DEEP_LINK_ACTION, (params) => {
-      void this.handleDeepLink(params as Record<string, string>);
+      void this.handleDeepLink(params);
     });
     // A pending cross-vault link is consumed once the target vault is focused
     // (desktop multi-window) — layout-ready covers the open-from-cold case.
@@ -275,7 +281,7 @@ export default class InventTasksPlugin extends Plugin {
     if (!Platform.isMobile) {
       const handler = (e: KeyboardEvent) => this.handleHotkey(e);
       document.addEventListener("keydown", handler, { capture: true });
-      this.register(() => document.removeEventListener("keydown", handler, { capture: true } as any));
+      this.register(() => document.removeEventListener("keydown", handler, { capture: true }));
     }
   }
 
@@ -289,7 +295,7 @@ export default class InventTasksPlugin extends Plugin {
   /** Re-register palette commands (e.g. after language change). */
   registerCommands() {
     for (const id of PLUGIN_COMMAND_IDS) {
-      (this.app as any).commands?.removeCommand(`${this.manifest.id}:${id}`);
+      (this.app as unknown as AppWithCommands).commands?.removeCommand(`${this.manifest.id}:${id}`);
     }
     this.addCommand({
       id: "open",
@@ -483,16 +489,20 @@ export default class InventTasksPlugin extends Plugin {
     };
   }
 
-  async onunload() {
-    this.notificationCenter?.stop();
-    this.calendarSyncManager?.stop();
-    this.backgroundServices?.stopAll();
-    this.incrementalBackupService?.stop();
-    this.syncManager?.stop();
-    this.vaultSyncManager?.stop();
-    this.index?.unload();
-    this.secretFieldSession.lockAll();
-    document.body.removeClass("it-bg-white", "it-bg-black");
+  onunload(): void {
+    // Runs synchronously, as before; an exception still ends up in a dropped
+    // promise instead of interrupting Obsidian's own unload sequence.
+    void (async () => {
+      this.notificationCenter?.stop();
+      this.calendarSyncManager?.stop();
+      this.backgroundServices?.stopAll();
+      this.incrementalBackupService?.stop();
+      this.syncManager?.stop();
+      this.vaultSyncManager?.stop();
+      this.index?.unload();
+      this.secretFieldSession.lockAll();
+      document.body.removeClass("it-bg-white", "it-bg-black");
+    })();
   }
 
   refreshIncrementalBackupService(): void {
@@ -657,8 +667,8 @@ export default class InventTasksPlugin extends Plugin {
       // that lives in the vault-synced workspace state file instead.
       workspaces: this.settings.workspaces.map((ws) => ({
         ...ws,
-        activityConfig: undefined as any,
-        notifications: undefined as any,
+        activityConfig: undefined as unknown as WorkspaceEntry["activityConfig"],
+        notifications: undefined as unknown as WorkspaceEntry["notifications"],
         notifState: undefined,
         calendarSync: undefined,
         sync: ws.sync ? { ...ws.sync, token: protectSecret(secretId(`sync-token-${ws.id}`), ws.sync.token) || "" } : ws.sync,
@@ -845,9 +855,9 @@ export default class InventTasksPlugin extends Plugin {
     //    re-render can't resurrect a removed vault's icon. Internal API —
     //    guarded so it no-ops if the shape changes across Obsidian versions.
     try {
-      const ribbon: any = (this.app.workspace as any).leftRibbon;
+      const ribbon = (this.app.workspace as unknown as WorkspaceWithRibbon).leftRibbon;
       if (ribbon && Array.isArray(ribbon.items)) {
-        ribbon.items = ribbon.items.filter((it: any) => !(typeof it?.title === "string" && it.title.startsWith("InventTasks — ")));
+        ribbon.items = ribbon.items.filter((it) => !(typeof it?.title === "string" && it.title.startsWith("InventTasks — ")));
       }
     } catch { /* internal API unavailable — DOM cleanup above still applies */ }
     // 4) Zero workspaces → one generic button so the plugin stays reachable
@@ -908,7 +918,7 @@ export default class InventTasksPlugin extends Plugin {
       await this.index.scan();
       if (await this.index.ensureSystemLists()) await this.index.scan();
       this.refreshViews();
-    } catch (e: any) {
+    } catch (e) {
       console.error("InventTasks workspace init failed", e);
     }
   }
@@ -931,9 +941,9 @@ export default class InventTasksPlugin extends Plugin {
       this.applyStartupLocation();
       this.refreshViews();
       this.refreshBackgroundServices();
-    } catch (e: any) {
+    } catch (e) {
       console.error("InventTasks demo setup failed", e);
-      new Notice(t("notice.richDemoFailed", { msg: e?.message ?? String(e) }));
+      new Notice(t("notice.richDemoFailed", { msg: (e as Error | undefined)?.message ?? String(e) }));
     }
   }
 
@@ -1090,10 +1100,10 @@ export default class InventTasksPlugin extends Plugin {
         title: t("deepLink.switchWorkspaceTitle"),
         message: t("deepLink.switchWorkspaceMsg", { name: target.name }),
         confirmLabel: t("deepLink.switchVaultConfirm"),
-        onConfirm: async () => {
+        onConfirm: fireAndForget(async () => {
           await this.switchWorkspace(target.id);
           await this.revealAndNavigate(link);
-        },
+        }),
       }).open();
       return;
     }
@@ -1128,7 +1138,7 @@ export default class InventTasksPlugin extends Plugin {
     try { raw = window.localStorage.getItem(InventTasksPlugin.PENDING_DEEPLINK_KEY); } catch { return; }
     if (!raw) return;
     let parsed: { link?: DeepLinkParams; ts?: number };
-    try { parsed = JSON.parse(raw); } catch { this.clearPendingDeepLink(); return; }
+    try { parsed = JSON.parse(raw) as { link?: DeepLinkParams; ts?: number }; } catch { this.clearPendingDeepLink(); return; }
     const link = parsed.link;
     if (!link || !parsed.ts || Date.now() - parsed.ts > 120000) { this.clearPendingDeepLink(); return; }
     // Not our vault yet — leave it for the right one to claim.
@@ -1233,8 +1243,8 @@ export default class InventTasksPlugin extends Plugin {
         }
         this.index.emit();
         return true;
-      } catch (cause: any) {
-        error = cause?.message === "INVALID_PASSWORD" ? t("secret.invalidPassword") : t("secret.cryptoError", { msg: cause?.message || String(cause) });
+      } catch (cause) {
+        error = (cause as Error | undefined)?.message === "INVALID_PASSWORD" ? t("secret.invalidPassword") : t("secret.cryptoError", { msg: (cause as Error | undefined)?.message || String(cause) });
       }
     }
   }
@@ -1344,7 +1354,7 @@ export default class InventTasksPlugin extends Plugin {
       if (!leaf) return;
       await leaf.setViewState({ type: VIEW_TYPE_INVENTTASKS_FAVORITES, active: true });
     }
-    this.app.workspace.revealLeaf(leaf);
+    void this.app.workspace.revealLeaf(leaf);
   }
 
   // Show/hide the bottom favorites bar (persisted per workspace) + re-render.
@@ -1427,7 +1437,7 @@ export default class InventTasksPlugin extends Plugin {
     }
     // reveal=false (startup with "restore last view") keeps the navigator
     // available as a tab without pulling focus off Obsidian's restored view.
-    if (reveal) this.app.workspace.revealLeaf(leaf);
+    if (reveal) void this.app.workspace.revealLeaf(leaf);
   }
 
   async activateView() {
@@ -1439,7 +1449,7 @@ export default class InventTasksPlugin extends Plugin {
       leaf = this.app.workspace.getLeaf(true);
       await leaf.setViewState({ type: VIEW_TYPE_INVENTTASKS, active: true });
     }
-    this.app.workspace.revealLeaf(leaf);
+    void this.app.workspace.revealLeaf(leaf);
     // Make it the active leaf, not just "revealed". On mobile, revealLeaf alone
     // doesn't bring a background main-area leaf to the front — so a deep link to
     // a list/space/doc/view stayed hidden behind whatever leaf was on top, while
@@ -1499,7 +1509,7 @@ export default class InventTasksPlugin extends Plugin {
     root.classList.toggle("inventtasks-active-text-node", text === "node");
     const isHex = typeof text === "string" && /^#[0-9a-fA-F]{3,8}$/.test(text.trim());
     if (text !== "inherit" && text !== "node" && isHex) {
-      root.style.setProperty("--inventtasks-active-text-color", text!);
+      root.style.setProperty("--inventtasks-active-text-color", text);
     } else {
       root.style.removeProperty("--inventtasks-active-text-color");
     }

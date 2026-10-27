@@ -5,13 +5,15 @@ import {
   StatusDef, ResolvedStatusSet, CustomFieldDef, PriorityDef,
   ViewDefaults, ViewType, ContextLocation, TaskType, SidebarOrder,
    ChipStyles, ResolvedChipStyles, parentTaskIds, normalizeParentTask,
-  DocMeta, DocPage, FavLocation,
+  DocMeta, DocPage, FavLocation, TaskData, ConfigurableSet, StatusGroup,
+  ChecklistItem, TaskRelationships, PerViewDefaults,
 } from "../types";
 import {
   parseTaskFile, parseSpaceConfig, parseFolderConfig, parseListConfig,
   parseWorkspaceConfig, parseViewConfig, parseDocMeta, parseDocPage,
   serializeTask, joinFrontmatter, splitFrontmatter
 } from "./parsers";
+import type { Frontmatter } from "./parsers";
 import { t } from "../i18n";
 import { absoluteLocationKey, portableLocationKey } from "../view-state";
 import { limit, freeLimit, licenseConsistent } from "./license";
@@ -30,6 +32,7 @@ import { appendActivity } from "./activity";
 import { copyAllAttachmentsForTask, deleteAllAttachmentsForTask } from "./attachments";
 import { rescheduleOnClose } from "./recurring";
 import { MAX_TASK_TITLE_LENGTH, parseNonNegativeInteger, validateTaskTitle } from "./task-values";
+import { fireAndForget } from "../utils/async";
 
 type Listener = () => void;
 
@@ -125,7 +128,7 @@ export class WorkspaceIndex {
   private taskParseCache = new Map<string, {
     mtime: number;
     size: number;
-    data: any;
+    data: TaskData;
     body: string;
     yamlError?: string;
   }>();
@@ -553,10 +556,10 @@ export class WorkspaceIndex {
     const debounced = () => {
       if (this.suppressEvents > 0) return;
       if (this.reloadTimer !== null) window.clearTimeout(this.reloadTimer);
-      this.reloadTimer = window.setTimeout(async () => {
+      this.reloadTimer = window.setTimeout(fireAndForget(async () => {
         await this.scan();
         this.emit();
-      }, 350);
+      }), 350);
     };
     const shouldReact = (path: string) => {
       // Only markdown matters to the index (tasks + space/folder/list/workspace
@@ -578,7 +581,7 @@ export class WorkspaceIndex {
   // Walks L → F → S → WS picking the first non-empty array (override semantics).
   private walkArr<T>(
     opts: { listPath?: string; folderPath?: string; spacePath?: string },
-    pick: (cfg: any) => T[] | undefined,
+    pick: (cfg: ConfigurableSet | undefined) => T[] | undefined,
     fallback: T[]
   ): T[] {
     let folderPath = opts.folderPath;
@@ -697,10 +700,10 @@ export class WorkspaceIndex {
     view: ViewType,
     key: string,
     loc: ContextLocation,
-    isValid: (v: any) => boolean,
+    isValid: (v: unknown) => boolean,
     fallback: T,
   ): T {
-    return this.walkConfigChain(loc, (cfg) => cfg?.view_defaults?.[view]?.[key], isValid, fallback);
+    return this.walkConfigChain(loc, (cfg) => (cfg?.view_defaults?.[view] as Record<string, unknown> | undefined)?.[key], isValid, fallback);
   }
 
   // Resolve a single field on `task_behavior` (or any other
@@ -710,10 +713,10 @@ export class WorkspaceIndex {
   resolveTaskBehaviorValue<T>(
     key: keyof import("../types").TaskBehavior,
     loc: ContextLocation,
-    isValid: (v: any) => boolean,
+    isValid: (v: unknown) => boolean,
     fallback: T,
   ): T {
-    return this.walkConfigChain(loc, (cfg) => (cfg?.task_behavior as any)?.[key], isValid, fallback);
+    return this.walkConfigChain(loc, (cfg) => (cfg?.task_behavior)?.[key], isValid, fallback);
   }
 
   resolveNotificationsEnabledForLocation(loc: ContextLocation): boolean {
@@ -729,7 +732,7 @@ export class WorkspaceIndex {
   // (notify_system / notify_ntfy / notifications_enabled).
   // First explicit boolean from narrowest→widest wins.
   resolveConfigBoolForLocation(loc: ContextLocation, field: string, fallback = true): boolean {
-    return this.walkConfigChain(loc, (cfg) => cfg?.[field], (v) => typeof v === "boolean", fallback);
+    return this.walkConfigChain(loc, (cfg) => (cfg as Record<string, unknown> | undefined)?.[field], (v) => typeof v === "boolean", fallback);
   }
 
   resolveCalendarSyncStatusPolicyForLocation(loc: ContextLocation): import("../types").CalendarSyncStatusPolicy {
@@ -770,8 +773,8 @@ export class WorkspaceIndex {
   // Shared chain walker used by the value-resolvers above.
   private walkConfigChain<T>(
     loc: ContextLocation,
-    pick: (cfg: any) => any,
-    isValid: (v: any) => boolean,
+    pick: (cfg: ConfigurableSet | undefined) => unknown,
+    isValid: (v: unknown) => boolean,
     fallback: T,
   ): T {
     const chain = this.configChainForLocation(loc);
@@ -782,8 +785,8 @@ export class WorkspaceIndex {
     return fallback;
   }
 
-  private configChainForLocation(loc: ContextLocation): any[] {
-    const chain: any[] = [];
+  private configChainForLocation(loc: ContextLocation): Array<ConfigurableSet | undefined> {
+    const chain: Array<ConfigurableSet | undefined> = [];
     if (loc.kind === "list") {
       const list = this.findList(loc.path);
       if (list) {
@@ -837,7 +840,7 @@ export class WorkspaceIndex {
   // same level that ultimately defines the palette. Defaults to 0.
   resolveEmptyPosition(axis: "status" | "priority" | "tags" | "context" | "type", loc: ContextLocation): number {
     const fromMap = (m?: Record<string, number>) => (m && typeof m[axis] === "number" ? m[axis] : undefined);
-    const palettePick = (cfg: any): any[] | undefined => {
+    const palettePick = (cfg: ConfigurableSet): unknown[] | undefined => {
       switch (axis) {
         case "status": return cfg?.status_set;
         case "priority": return cfg?.priorities;
@@ -848,7 +851,7 @@ export class WorkspaceIndex {
     };
 
     // Build the resolve chain narrowest → widest.
-    const chain: any[] = [];
+    const chain: Array<ConfigurableSet | undefined> = [];
     if (loc.kind === "list") {
       const list = this.findList(loc.path);
       if (list) {
@@ -1018,7 +1021,7 @@ export class WorkspaceIndex {
     // For each property: the first level that defines it wins.
     let folderPath = opts.folderPath;
     let spacePath = opts.spacePath;
-    const chain: any[] = [];
+    const chain: Array<ConfigurableSet | null | undefined> = [];
     if (opts.listPath) {
       const list = this.findList(opts.listPath);
       chain.push(list?.config);
@@ -1054,7 +1057,7 @@ export class WorkspaceIndex {
       }
     }
     return {
-      visible_fields: visible_fields ?? defaultVisibleFor(view as any),
+      visible_fields: visible_fields ?? defaultVisibleFor(view),
       color_by,
       date_field,
       start_date_field,
@@ -1448,7 +1451,7 @@ export class WorkspaceIndex {
     priority?: 1 | 2 | 3 | 4 | null;
     due_date?: string;
     start_date?: string;
-    custom_fields?: Record<string, any>;
+    custom_fields?: Record<string, unknown>;
     tags?: string[];
     context?: string[];
     parent_task?: string;
@@ -1477,7 +1480,7 @@ export class WorkspaceIndex {
     const statusSet = this.resolveStatusSet(input.listPath).statuses;
     const status = input.status ?? statusSet.find((s) => s.is_default)?.id ?? statusSet[0]?.id;
     const statusObj = statusSet.find((s) => s.id === status);
-    const data: any = {
+    const data: TaskData = {
       id,
       type: input.type || list.config.default_task_type || "task",
       title,
@@ -1509,9 +1512,9 @@ export class WorkspaceIndex {
     const fileName = `${id.toLowerCase()}-${slugify(title) || "untitled"}.md`;
     const filePath = `${list.path}/${safeFileName(fileName)}`;
     const body = input.body ?? `\n# ${title}\n`;
-    const content = serializeTask(data as any, body);
+    const content = serializeTask(data, body);
     const tf: TaskFile = {
-      data: data as any,
+      data: data,
       body,
       filePath,
       spacePath: list.spacePath,
@@ -1552,7 +1555,7 @@ export class WorkspaceIndex {
         for (const source of sources) {
           const id = this.generateTaskId();
           const now = nowIso();
-          const data: any = JSON.parse(JSON.stringify(source.data));
+          const data = JSON.parse(JSON.stringify(source.data)) as TaskData;
           data.id = id;
           delete data.custom_id;
           data.created_at = now;
@@ -1618,10 +1621,10 @@ export class WorkspaceIndex {
   // (updateTask / bulkUpdateTasks): when a task transitions INTO done/closed
   // with an active recurring config, bump due_date to the next occurrence,
   // reset status to the list default and log the reschedule.
-  private maybeRescheduleRecurring(draft: any, listPath: string | undefined, prevData: any): void {
+  private maybeRescheduleRecurring(draft: TaskData, listPath: string | undefined, prevData: TaskData): void {
     if (!draft.recurring?.enabled) return;
     const set = this.resolveStatusSet(listPath).statuses;
-    const groupOf = (status: string | undefined | null, fallback?: string) =>
+    const groupOf = (status: string | undefined | null, fallback?: StatusGroup) =>
       set.find((s) => s.id === status)?.group ?? fallback;
     const newGroup = groupOf(draft.status, draft.status_group);
     if (newGroup !== "done" && newGroup !== "closed") return;
@@ -1651,11 +1654,11 @@ export class WorkspaceIndex {
     }
   }
 
-  async updateTask(id: string, mutator: (data: any, body: string) => { data: any; body?: string } | void) {
+  async updateTask(id: string, mutator: (data: TaskData, body: string) => { data: Partial<TaskData>; body?: string } | void) {
     return this.withTaskWriteLock(id, () => this.updateTaskUnlocked(id, mutator));
   }
 
-  private async updateTaskUnlocked(id: string, mutator: (data: any, body: string) => { data: any; body?: string } | void) {
+  private async updateTaskUnlocked(id: string, mutator: (data: TaskData, body: string) => { data: Partial<TaskData>; body?: string } | void) {
     const tf = this.tasksById.get(id);
     if (!tf) throw new Error(t("err.taskNotFound", { id }));
     const file = this.app.vault.getAbstractFileByPath(tf.filePath);
@@ -1729,7 +1732,7 @@ export class WorkspaceIndex {
   // Apply a patch to many tasks at once — one suppressed file write each, then
   // a single emit. Used by Table bulk-edit so 50 selected rows don't trigger
   // 50 full re-renders.
-  async bulkUpdateTasks(ids: string[], patch: (d: any) => any): Promise<void> {
+  async bulkUpdateTasks(ids: string[], patch: (d: TaskData) => Partial<TaskData> | null | undefined): Promise<void> {
     await this.withSuppression(async () => {
       for (const id of ids) {
         await this.withTaskWriteLock(id, async () => {
@@ -1740,7 +1743,7 @@ export class WorkspaceIndex {
           const current = parseTaskFile(await this.app.vault.read(file));
           if (current.data.id && current.data.id !== id) return;
           const patchData = patch(current.data) || {};
-          const draft: any = { ...current.data, id, ...patchData, updated_at: nowIso() };
+          const draft: TaskData = { ...current.data, id, ...patchData, updated_at: nowIso() };
           let body = current.body;
           if (Object.prototype.hasOwnProperty.call(patchData, "title")) {
             const checkedTitle = validateTaskTitle(draft.title);
@@ -1780,12 +1783,13 @@ export class WorkspaceIndex {
                 draft.activity = appendActivity(draft.activity, { kind, from, to });
               }
             }
-            const activityValue = (value: any): string | number | null => {
+            const activityValue = (value: unknown): string | number | null => {
               if (value === null || value === undefined || value === "") return null;
               if (typeof value === "number" || typeof value === "string") return value;
               if (Array.isArray(value)) return value.map(String).join(", ") || null;
               if (typeof value === "boolean") return String(value);
-              try { return JSON.stringify(value); } catch { return String(value); }
+              const shown: { toString(): string } = value;
+              try { return JSON.stringify(value); } catch { return String(shown); }
             };
             const oldTags = Array.isArray(current.data.tags) ? current.data.tags : [];
             const newTags = Array.isArray(draft.tags) ? draft.tags : [];
@@ -1885,15 +1889,15 @@ export class WorkspaceIndex {
       }
       return out;
     };
-    const mergedRefs = (key: "blocks" | "related", current: any): string[] => redirected([
+    const mergedRefs = (key: "blocks" | "related", current: TaskData): string[] => redirected([
       ...(current.relationships?.[key] || []),
       ...sources.flatMap((source) => source.data.relationships?.[key] || []),
     ], targetId);
 
-    await this.updateTask(targetId, (data, body) => {
+    await this.updateTask(targetId, (data: TaskData, body: string) => {
       const usedChecklistIds = new Set<string>();
-      const checklist: any[] = [];
-      const addChecklist = (items: any[] | undefined, sourceId?: string) => {
+      const checklist: ChecklistItem[] = [];
+      const addChecklist = (items: ChecklistItem[] | undefined, sourceId?: string) => {
         for (const original of items || []) {
           let id = String(original.id || "checklist-item");
           if (usedChecklistIds.has(id)) {
@@ -1947,7 +1951,7 @@ export class WorkspaceIndex {
       const oldBlocks = partner.data.relationships?.blocks || [];
       const oldRelated = partner.data.relationships?.related || [];
       if (![...oldParents, ...oldBlocks, ...oldRelated].some((id) => selectedIds.has(id))) continue;
-      await this.updateTask(partner.data.id, (data) => {
+      await this.updateTask(partner.data.id, (data: TaskData) => {
         const parents = redirected(parentTaskIds(data), partner.data.id);
         const blocks = redirected(data.relationships?.blocks, partner.data.id);
         const related = redirected(data.relationships?.related, partner.data.id);
@@ -1974,13 +1978,13 @@ export class WorkspaceIndex {
     // Only `blocks` and `related` are stored — `waiting_on` is derived from
     // inverse blocks, so it disappears automatically once `blocks` is cleaned.
     const refKeys: Array<"blocks" | "related"> = ["blocks", "related"];
-    const writes: Array<{ tf: TaskFile; data: any }> = [];
+    const writes: Array<{ tf: TaskFile; data: TaskData }> = [];
     for (const partner of this.tasksById.values()) {
       if (partner.data.id === id) continue;
       const rels = partner.data.relationships;
       if (!rels) continue;
       let touched = false;
-      const nextRels: any = { ...rels };
+      const nextRels: TaskRelationships = { ...rels };
       for (const k of refKeys) {
         const arr = rels[k];
         if (Array.isArray(arr) && arr.includes(id)) {
@@ -2015,7 +2019,7 @@ export class WorkspaceIndex {
         const fromDir = tf.listPath || file.parent?.path || "";
         const trashDir = this.trashDir();
         await this.ensureFolder(trashDir);
-        const withMeta: any = { ...tf.data, _trashed_at: nowIso(), _trashed_from: fromDir };
+        const withMeta: TaskData & { _trashed_at: string; _trashed_from: string } = { ...tf.data, _trashed_at: nowIso(), _trashed_from: fromDir };
         await this.app.vault.modify(file, serializeTask(withMeta, tf.body));
         await this.app.vault.rename(file, this.uniqueChildPath(trashDir, file.name));
       }
@@ -2126,7 +2130,7 @@ export class WorkspaceIndex {
         const { fm } = splitFrontmatter(await this.app.vault.read(c));
         out.push({
           kind: "task",
-          name: fm.title ?? c.basename,
+          name: (fm.title as string | undefined) ?? c.basename,
           id: typeof fm.id === "string" ? fm.id : undefined,
           trashedAt: typeof fm._trashed_at === "string" ? fm._trashed_at : undefined,
           from: typeof fm._trashed_from === "string" ? fm._trashed_from : undefined,
@@ -2141,7 +2145,7 @@ export class WorkspaceIndex {
         const kind = cfg.name === SPACE_FILE ? "space" : cfg.name === FOLDER_FILE ? "folder" : "list";
         out.push({
           kind,
-          name: fm.name ?? c.name,
+          name: (fm.name as string | undefined) ?? c.name,
           trashedAt: typeof fm._trashed_at === "string" ? fm._trashed_at : undefined,
           from: typeof fm._trashed_from === "string" ? fm._trashed_from : undefined,
           path: c.path,
@@ -2171,7 +2175,7 @@ export class WorkspaceIndex {
     // Re-parse to drop the _trashed_* metadata (parseTaskFile ignores unknown
     // keys), then write clean frontmatter with the target hierarchy and move.
     const parsed = parseTaskFile(raw);
-    const data: any = { ...parsed.data };
+    const data: TaskData = { ...parsed.data };
     if (data.id && this.tasksById.has(data.id)) {
       throw new Error(t("err.restoreIdConflict", { id: data.id }));
     }
@@ -2229,14 +2233,14 @@ export class WorkspaceIndex {
    * coincidence.
    */
   private async stripCustomRelationshipRefs(id: string): Promise<void> {
-    const writes: Array<{ tf: TaskFile; data: any }> = [];
+    const writes: Array<{ tf: TaskFile; data: TaskData }> = [];
     for (const tf of this.tasksById.values()) {
       const cf = tf.data.custom_fields;
       if (!cf) continue;
       const relFields = this.resolveCustomFields(tf.listPath).filter((f) => f.type === "relationship");
       if (relFields.length === 0) continue;
       let touched = false;
-      const next: Record<string, any> = { ...cf };
+      const next: Record<string, unknown> = { ...cf };
       for (const field of relFields) {
         const arr = cf[field.id];
         if (!Array.isArray(arr) || !arr.includes(id)) continue;
@@ -2276,7 +2280,7 @@ export class WorkspaceIndex {
     if (!(target instanceof TFolder)) {
       throw new Error(t("err.restoreParentGone"));
     }
-    const clean: any = { ...fm };
+    const clean: Frontmatter = { ...fm };
     delete clean._trashed_at;
     delete clean._trashed_from;
     await this.withSuppression(async () => {
@@ -2394,7 +2398,7 @@ export class WorkspaceIndex {
     const filePath = `${dirPath}/${SPACE_FILE}`;
     // New space starts as fully-inherited from workspace (no overrides).
     // Caller can pass `statusSet` to immediately override the status workflow.
-    const fm: any = {
+    const fm: Partial<SpaceConfig> = {
       space_id: `SPC-${Math.floor(Math.random() * 10000).toString().padStart(4, "0")}`,
       name,
       icon: opts.icon ?? "🏷️",
@@ -2437,7 +2441,7 @@ export class WorkspaceIndex {
         const raw = await this.app.vault.read(existing);
         const { fm, body } = splitFrontmatter(raw);
         const inheritedFeatureKeys = new Set(["priorities", "tags", "context"]);
-        const currentFeatures = typeof fm.features === "object" && fm.features ? { ...fm.features } : {};
+        const currentFeatures: Record<string, unknown> = typeof fm.features === "object" && fm.features ? { ...fm.features } : {};
         for (const key of inheritedFeatureKeys) delete currentFeatures[key];
         const next = {
           ...fm,
@@ -2501,7 +2505,7 @@ export class WorkspaceIndex {
     const dirPath = `${parentPath}/${dirName}`;
     await this.ensureFolder(dirPath);
     const filePath = `${dirPath}/${LIST_FILE}`;
-    const fm: any = {
+    const fm: Partial<ListConfig> = {
       list_id: `LST-${Math.floor(Math.random() * 10000).toString().padStart(4, "0")}`,
       name,
       icon: opts.icon ?? "📋",
@@ -2577,22 +2581,22 @@ export class WorkspaceIndex {
     view: ViewType,
     patch: Partial<ViewDefaults>,
   ): Promise<void> {
-    const merge = (cfg: any) => {
-      const vd: any = { ...(cfg?.view_defaults || {}) };
+    const merge = (cfg: ConfigurableSet | null | undefined) => {
+      const vd: PerViewDefaults = { ...(cfg?.view_defaults || {}) };
       vd[view] = { ...(vd[view] || {}), ...patch };
       return vd;
     };
     if (level === "workspace") {
-      await this.updateWorkspaceConfig({ view_defaults: merge(this.workspace) } as any);
+      await this.updateWorkspaceConfig({ view_defaults: merge(this.workspace) });
     } else if (level === "space" && path) {
       const s = this.findSpace(path); if (!s) return;
-      await this.updateSpaceConfig(path, { view_defaults: merge(s.config) } as any);
+      await this.updateSpaceConfig(path, { view_defaults: merge(s.config) });
     } else if (level === "folder" && path) {
       const f = this.findFolder(path); if (!f) return;
-      await this.updateFolderConfig(path, { view_defaults: merge(f.config) } as any);
+      await this.updateFolderConfig(path, { view_defaults: merge(f.config) });
     } else if (level === "list" && path) {
       const l = this.findList(path); if (!l) return;
-      await this.updateListConfig(path, { view_defaults: merge(l.config) } as any);
+      await this.updateListConfig(path, { view_defaults: merge(l.config) });
     }
     await this.scan();
     this.emit();
@@ -2603,7 +2607,7 @@ export class WorkspaceIndex {
     if (oldName === newName) return;
     const affected = this.allTasks().filter((t) => (t.data.tags || []).includes(oldName));
     for (const t of affected) {
-      await this.updateTask(t.data.id, (d) => ({
+      await this.updateTask(t.data.id, (d: TaskData) => ({
         data: { ...d, tags: (d.tags || []).map((x: string) => (x === oldName ? newName : x)) },
       }));
     }
@@ -2612,7 +2616,7 @@ export class WorkspaceIndex {
   async removeTagFromAll(name: string) {
     const affected = this.allTasks().filter((t) => (t.data.tags || []).includes(name));
     for (const t of affected) {
-      await this.updateTask(t.data.id, (d) => ({
+      await this.updateTask(t.data.id, (d: TaskData) => ({
         data: { ...d, tags: (d.tags || []).filter((x: string) => x !== name) },
       }));
     }
@@ -2666,7 +2670,7 @@ export class WorkspaceIndex {
   async addTaskToList(taskId: string, listPath: string): Promise<void> {
     const tf = this.tasksById.get(taskId);
     if (!tf || tf.listPath === listPath) return; // home already covers it
-    await this.updateTask(taskId, (d) => {
+    await this.updateTask(taskId, (d: TaskData) => {
       const cur = Array.isArray(d.additional_lists) ? d.additional_lists : [];
       if (cur.includes(listPath)) return; // no-op
       return { data: { ...d, additional_lists: [...cur, listPath] } };
@@ -2675,7 +2679,7 @@ export class WorkspaceIndex {
 
   // Stop showing this task in a given additional list (never affects home).
   async removeTaskFromList(taskId: string, listPath: string): Promise<void> {
-    await this.updateTask(taskId, (d) => {
+    await this.updateTask(taskId, (d: TaskData) => {
       const cur: string[] = Array.isArray(d.additional_lists) ? d.additional_lists : [];
       if (!cur.includes(listPath)) return;
       const next = cur.filter((p) => p !== listPath);
@@ -2715,7 +2719,7 @@ export class WorkspaceIndex {
     const targetSpace = this.findSpace(targetList.spacePath);
     const targetFolder = targetList.folderPath ? this.findFolder(targetList.folderPath) : undefined;
 
-    const draftData = {
+    const draftData: TaskData = {
       ...tf.data,
       list: targetList.config.name,
       space: targetSpace?.config.name,
@@ -2725,12 +2729,12 @@ export class WorkspaceIndex {
       updated_at: nowIso(),
     };
     // Drop `folder` cleanly when the target list lives directly under a space.
-    if (!targetFolder) delete (draftData as any).folder;
+    if (!targetFolder) delete draftData.folder;
     // If the new home was an additional list, it's now redundant — drop it.
     const addl = (tf.data.additional_lists || []).filter((p) => p !== targetListPath);
-    (draftData as any).additional_lists = addl.length ? addl : undefined;
+    draftData.additional_lists = addl.length ? addl : undefined;
 
-    const content = serializeTask(draftData as any, tf.body);
+    const content = serializeTask(draftData, tf.body);
 
     await this.withSuppression(async () => {
       // Write the new content first, then move the file. Modifying after the
@@ -2746,7 +2750,7 @@ export class WorkspaceIndex {
       const i = oldList.taskFiles.findIndex((x) => x.data.id === taskId);
       if (i >= 0) oldList.taskFiles.splice(i, 1);
     }
-    tf.data = draftData as any;
+    tf.data = draftData;
     tf.filePath = newPath;
     tf.listPath = targetList.path;
     tf.spacePath = targetList.spacePath;
@@ -3049,7 +3053,7 @@ export class WorkspaceIndex {
     const root = (base === "/" || base === "") ? "" : base;
     const viewsDir = root ? `${root}/${VIEWS_DIR}` : VIEWS_DIR;
     await this.ensureFolder(viewsDir);
-    const clean: any = { ...view };
+    const clean: Partial<ViewConfig> = { ...view };
     delete clean.__path; // never persist the internal source-path marker
     // Persist the location root-RELATIVE so the file resolves on every device.
     if (clean.location) clean.location = portableLocationKey(clean.location, this.rootPath);
@@ -3123,7 +3127,7 @@ export class WorkspaceIndex {
     const raw = await this.app.vault.read(file);
     const split = raw.match(/^---\s*\r?\n([\s\S]*?)\r?\n---\s*\r?\n?/);
     const body = split ? raw.slice(split[0].length) : raw;
-    const clean: any = { ...v, ...patch };
+    const clean: Partial<ViewConfig> = { ...v, ...patch };
     delete clean.__path;
     // Always store the portable (root-relative) form — this also self-heals
     // legacy absolute keys on the next unrelated write (rename/order/pin).
@@ -3214,13 +3218,13 @@ export class WorkspaceIndex {
     if (!(file instanceof TFile)) return;
     const raw = await this.app.vault.read(file);
     const { fm, body } = splitFrontmatter(raw);
-    const next: any = { ...fm };
+    const next: Frontmatter = { ...fm };
     for (const k of ["name", "icon", "color", "order", "location", "default"] as const) {
       if (patch[k] !== undefined) next[k] = patch[k];
     }
     // Always store the portable (root-relative) form — this also self-heals
     // legacy absolute keys on the next unrelated write (rename/order/default).
-    if (next.location) next.location = portableLocationKey(next.location, this.rootPath);
+    if (next.location) next.location = portableLocationKey(next.location as string, this.rootPath);
     next.updated_at = nowIso();
     await this.writeFile(doc.__path, joinFrontmatter(next, body));
   }
@@ -3329,7 +3333,7 @@ export class WorkspaceIndex {
     if (!(file instanceof TFile)) return;
     const raw = await this.app.vault.read(file);
     const { fm, body } = splitFrontmatter(raw);
-    const next: any = { ...fm };
+    const next: Frontmatter = { ...fm };
     for (const k of ["title", "icon", "color", "order"] as const) {
       if (patch[k] !== undefined) next[k] = patch[k];
     }

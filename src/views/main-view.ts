@@ -7,9 +7,9 @@ import { renderIconish, renderFieldIcon } from "../ui/icons";
 import { renderLogo } from "../ui/logo";
 import { openIconPicker, openColorPicker } from "../ui/pickers";
 import { resolveStartupLocation } from "../settings";
-import { ContextLocation, ViewType, TaskFile, FilterGroup, SortRule, ViewConfig, ViewDefaults, TimeZoom, DocMeta, DocPage, parentTaskIds } from "../types";
+import { ContextLocation, ViewType, TaskFile, FilterGroup, FilterCondition, SortRule, ViewConfig, ViewDefaults, TimeZoom, DocMeta, DocPage, parentTaskIds } from "../types";
 import { showPopover } from "../ui/components";
-import { showContextMenu } from "../ui/menu";
+import { showContextMenu, type MenuItem } from "../ui/menu";
 import { ConfirmModal } from "../modals/confirm-modal";
 import { MoveDocModal } from "../modals/move-modal";
 import { DocPickerModal } from "../modals/doc-picker-modal";
@@ -29,7 +29,7 @@ import { ExportModal } from "../modals/export-modal";
 import { TimeExportModal } from "../modals/time-export-modal";
 import type { ExportScope } from "../data/export";
 import { TimeExportFormat, TimeExportInput } from "../data/timeline-export";
-import { CreateSpaceModal, QuickTaskModal } from "../modals/create-modals";
+import { CreateSpaceModal, QuickTaskModal, type QuickTaskOptions } from "../modals/create-modals";
 import { TaskModal } from "../modals/task-modal";
 import { FilterModal, FilterFieldDef, FilterFieldType } from "../modals/filter-modal";
 import { SearchModal } from "../modals/search-modal";
@@ -39,6 +39,7 @@ import { calendarColorSourceLabel, fieldLabelFrom, getSubtaskModes, hierarchyLab
 import { todayKey } from "../utils/dates";
 import { PersistedViewState, groupCollapseKey, locationKey, locationFromKey, toggleCollapsedGroup } from "../view-state";
 import { DeepLinkParams } from "../data/deep-link";
+import { fireAndForget } from "../utils/async";
 
 // One chip in the Views bar — a saved view or a Doc. They share a single manual
 // order, so reordering and rendering treat them uniformly.
@@ -52,6 +53,25 @@ interface NavSnapshot {
   // When this position had a task modal open (e.g. you clicked a doc link inside
   // it), re-open that task on return.
   reopenTaskId?: string;
+}
+
+// Transient render bookkeeping the views stash on the state object (scroll
+// offsets, lazy-render extents, table selection). Not persisted.
+interface TransientViewState {
+  __listRenderedCount?: unknown;
+  __tableRenderedCount?: unknown;
+  __tableSelected?: unknown;
+  __listScrollTop?: unknown;
+  __tableScrollTop?: unknown;
+  __tgScrollLeft?: unknown;
+  __tgScrollTop?: unknown;
+  __calScrollTop?: unknown;
+  __calScrollLeft?: unknown;
+}
+
+// Obsidian's settings modal (private API on App).
+interface AppWithSetting {
+  setting?: { open?: () => void; openTabById?: (id: string) => void };
 }
 
 export interface ViewState {
@@ -265,9 +285,9 @@ export class InventTasksMainView extends ItemView {
     if (!this.applyingView) this.activeViewId = undefined;
     // The list/table lazy-render extent is meaningless once group/sort/filter
     // changes the contents — start fresh from the top, and clear table selection.
-    (this.state as any).__listRenderedCount = 0;
-    (this.state as any).__tableRenderedCount = 0;
-    (this.state as any).__tableSelected = undefined;
+    (this.state as TransientViewState).__listRenderedCount = 0;
+    (this.state as TransientViewState).__tableRenderedCount = 0;
+    (this.state as TransientViewState).__tableSelected = undefined;
     const snapshot: PersistedViewState = {
       viewType: this.state.viewType,
       groupBy: this.state.groupBy,
@@ -409,10 +429,10 @@ export class InventTasksMainView extends ItemView {
     this.state.cfShowTypeIcon = undefined;
     this.state.timelineShowUnscheduled = undefined;
     // Fresh view type → re-center the time grid + reset the calendar scroll.
-    (this.state as any).__tgScrollLeft = undefined;
-    (this.state as any).__tgScrollTop = undefined;
-    (this.state as any).__calScrollTop = undefined;
-    (this.state as any).__calScrollLeft = undefined;
+    (this.state as TransientViewState).__tgScrollLeft = undefined;
+    (this.state as TransientViewState).__tgScrollTop = undefined;
+    (this.state as TransientViewState).__calScrollTop = undefined;
+    (this.state as TransientViewState).__calScrollLeft = undefined;
     // Remember per-location so "Last selected" default_view restores it next
     // time we come back. Today/Everything/Favorites also persist — they read
     // it back through the same path.
@@ -431,13 +451,13 @@ export class InventTasksMainView extends ItemView {
     this.activeDocPageId = undefined;
     // New location → list/table lazy-render extent starts from the top, and
     // table row-selection clears.
-    (this.state as any).__listRenderedCount = 0;
-    (this.state as any).__tableRenderedCount = 0;
-    (this.state as any).__tableSelected = undefined;
-    (this.state as any).__tgScrollLeft = undefined;
-    (this.state as any).__tgScrollTop = undefined;
-    (this.state as any).__calScrollTop = undefined;
-    (this.state as any).__calScrollLeft = undefined;
+    (this.state as TransientViewState).__listRenderedCount = 0;
+    (this.state as TransientViewState).__tableRenderedCount = 0;
+    (this.state as TransientViewState).__tableSelected = undefined;
+    (this.state as TransientViewState).__tgScrollLeft = undefined;
+    (this.state as TransientViewState).__tgScrollTop = undefined;
+    (this.state as TransientViewState).__calScrollTop = undefined;
+    (this.state as TransientViewState).__calScrollLeft = undefined;
     // Restore the filters (Group/Sort/Show-closed/…) the user last set on
     // this location AND resolve the appropriate view (default_view ⊕
     // last-selected). Falls through silently if none — current state stays as-is.
@@ -508,9 +528,9 @@ export class InventTasksMainView extends ItemView {
     this.fullRender();
   }
 
-  quickCreateTask(extra: { preset?: any } = {}) {
+  quickCreateTask(extra: { preset?: QuickTaskOptions["preset"] } = {}) {
     const loc = this.state.location;
-    const opts: any = { preset: extra.preset };
+    const opts: QuickTaskOptions = { preset: extra.preset };
     if (loc.kind === "list") opts.listPath = loc.path;
     else if (loc.kind === "folder") opts.scopeFolderPath = loc.path;
     else if (loc.kind === "space") opts.scopeSpacePath = loc.path;
@@ -584,7 +604,7 @@ export class InventTasksMainView extends ItemView {
   }
 
   private refreshNotificationChrome() {
-    const sidebar = this.contentEl.querySelector(".it-sidebar-wrap") as HTMLElement | null;
+    const sidebar = this.contentEl.querySelector<HTMLElement>(".it-sidebar-wrap");
     if (sidebar) {
       const prevScroll = sidebar.scrollTop;
       sidebar.empty();
@@ -629,7 +649,7 @@ export class InventTasksMainView extends ItemView {
     this.disconnectRowObservers();
     // The explorer (sidebar) is rebuilt on every fullRender — preserve its
     // scroll so clicking a list/space deep in the tree doesn't jump to the top.
-    const prevSidebarScroll = (container.querySelector(".it-sidebar-wrap") as HTMLElement | null)?.scrollTop ?? 0;
+    const prevSidebarScroll = container.querySelector<HTMLElement>(".it-sidebar-wrap")?.scrollTop ?? 0;
     container.empty();
     container.addClass("inventtasks-content");
 
@@ -770,7 +790,7 @@ export class InventTasksMainView extends ItemView {
   // other surfaces, and remove. (Reorder is here rather than as hover arrows
   // because the bar is horizontal + scrolls; menu works on mobile too.)
   private showFavoriteChipMenu(e: MouseEvent, path: string, index: number, total: number) {
-    const items: any[] = [];
+    const items: MenuItem[] = [];
     if (index > 0) items.push({ label: t("action.moveLeft"), icon: "arrow-left", onClick: () => void this.plugin.index.moveFavorite(path, "bar", -1) });
     if (index < total - 1) items.push({ label: t("action.moveRight"), icon: "arrow-right", onClick: () => void this.plugin.index.moveFavorite(path, "bar", 1) });
     if (items.length) items.push("separator");
@@ -931,12 +951,12 @@ export class InventTasksMainView extends ItemView {
         // keystroke parks the fresh results outside the visible area — the list
         // looks empty until the keyboard is dismissed, which is exactly what it
         // was reported as. Results start at the top, where they were typed for.
-        const st2 = this.state as any;
+        const st2 = this.state as TransientViewState;
         st2.__listScrollTop = 0;
         st2.__tableScrollTop = 0;
         st2.__listRenderedCount = 0;
         st2.__tableRenderedCount = 0;
-        const body = this.contentEl.querySelector(".it-main-body") as HTMLElement | null;
+        const body = this.contentEl.querySelector<HTMLElement>(".it-main-body");
         if (body) body.scrollTop = 0;
         this.refreshContent();
       }, 200);
@@ -976,7 +996,7 @@ export class InventTasksMainView extends ItemView {
     }
     // Filter builder — available in every view (filters apply in collectTasks
     // regardless of view type). Badge shows the active condition count.
-    const condCount = this.state.filters?.conditions?.filter((c) => (c as any).field).length ?? 0;
+    const condCount = this.state.filters?.conditions?.filter((c) => (c as Partial<FilterCondition>).field).length ?? 0;
     const filterLabel = condCount > 0 ? t("toolbar.filterActive", { count: condCount }) : t("toolbar.filter");
     const filterBtn = ctl.createEl("button", { cls: "it-secondary-btn" + (condCount > 0 ? " is-active" : ""), attr: { title: filterLabel } });
     setIcon(filterBtn.createSpan({ cls: "it-btn-ic" }), "filter");
@@ -1042,7 +1062,7 @@ export class InventTasksMainView extends ItemView {
       // A child group that can wrap internally (the controls) would report a
       // shrunken scrollWidth if it's already wrapped — force it to one line for
       // the measurement so `needed` is the true natural one-line width.
-      const wrappers = Array.from(el.querySelectorAll(".it-topbar-controls")) as HTMLElement[];
+      const wrappers = Array.from(el.querySelectorAll<HTMLElement>(".it-topbar-controls"));
       for (const w of wrappers) w.addClass("it-measure-nowrap");
       const gap = parseFloat(getComputedStyle(el).columnGap) || 0;
       const kids = Array.from(el.children) as HTMLElement[];
@@ -1080,9 +1100,9 @@ export class InventTasksMainView extends ItemView {
   // views with their OWN inner scrollers (board column, calendar, table, gantt)
   // — not just the list view, whose content scrolls .it-main-body directly.
   private setupChromeAutohide(main: HTMLElement) {
-    const topbar = main.querySelector(".it-topbar") as HTMLElement | null;
+    const topbar = main.querySelector<HTMLElement>(".it-topbar");
     if (!topbar) return;
-    const viewsBar = main.querySelector(".it-views-bar") as HTMLElement | null;
+    const viewsBar = main.querySelector<HTMLElement>(".it-views-bar");
 
     let chromeH = 0;
     const setChromeHeight = () => {
@@ -1190,7 +1210,7 @@ export class InventTasksMainView extends ItemView {
   // published by setupChromeAutohide (runs in the same fullRender), so the
   // collapse distance is correct by first paint.
   private setChromeHidden(hidden: boolean) {
-    const main = this.contentEl.querySelector(".it-main") as HTMLElement | null;
+    const main = this.contentEl.querySelector<HTMLElement>(".it-main");
     if (!main) return;
     if (hidden) main.addClass("it-chrome-hidden");
     else main.removeClass("it-chrome-hidden");
@@ -1212,8 +1232,8 @@ export class InventTasksMainView extends ItemView {
   // aside so normal scrolling/taps work. Torn down whenever the view re-renders.
   private setupOverviewGesture() {
     this.teardownOverviewGesture();
-    const main = this.contentEl.querySelector(".it-main") as HTMLElement | null;
-    const scroll = this.contentEl.querySelector(".it-cal-scroll.is-compact-scroll") as HTMLElement | null;
+    const main = this.contentEl.querySelector<HTMLElement>(".it-main");
+    const scroll = this.contentEl.querySelector<HTMLElement>(".it-cal-scroll.is-compact-scroll");
     if (!main || !scroll) return;
 
     const ac = new AbortController();
@@ -1273,7 +1293,7 @@ export class InventTasksMainView extends ItemView {
   // Obsidian augments Node with isShown(); guard the call so a runtime
   // without it (tests) treats the view as visible.
   private isViewVisible(): boolean {
-    return (this.containerEl as any).isShown?.() ?? true;
+    return (this.containerEl as HTMLElement & { isShown?: () => boolean }).isShown?.() ?? true;
   }
 
   // Obsidian calls onResize when the view container changes size — including
@@ -1318,7 +1338,7 @@ export class InventTasksMainView extends ItemView {
   }
 
   refreshSyncIndicator() {
-    const el = this.contentEl.querySelector(".it-sync-indicator") as HTMLElement | null;
+    const el = this.contentEl.querySelector<HTMLElement>(".it-sync-indicator");
     if (!el) return;
     const info = this.syncStatusSummary();
     if (!info) { el.hide(); el.removeClass("is-shown"); return; }
@@ -1361,10 +1381,10 @@ export class InventTasksMainView extends ItemView {
   }
 
   private withScrollPreserved(fn: () => void) {
-    const before = (this.contentEl.querySelector(".it-main-body") as HTMLElement | null)?.scrollTop ?? 0;
+    const before = this.contentEl.querySelector<HTMLElement>(".it-main-body")?.scrollTop ?? 0;
     fn();
     if (before > 0) {
-      const after = this.contentEl.querySelector(".it-main-body") as HTMLElement | null;
+      const after = this.contentEl.querySelector<HTMLElement>(".it-main-body");
       if (after) {
         after.scrollTop = before;
         window.requestAnimationFrame(() => { after.scrollTop = before; });
@@ -1414,7 +1434,7 @@ export class InventTasksMainView extends ItemView {
         parent,
         plugin: this.plugin,
         onTaskClick: (t) => this.openTask(t),
-        onHistoryClick: async (entry) => {
+        onHistoryClick: fireAndForget(async (entry) => {
           // History is cross-workspace: switch to the entry's workspace (if it
           // isn't already active) before opening the task there.
           if (!entry.taskId) return;
@@ -1424,7 +1444,7 @@ export class InventTasksMainView extends ItemView {
           const task = this.plugin.index.tasksById.get(entry.taskId);
           if (task) this.openTask(task);
           else new Notice(t("notifications.historyTaskGone"));
-        },
+        }),
         rerender: () => {
           // User-driven actions inside Notifications (Read/Clear/Snooze/Restore
           // and tab changes) should not re-trigger the sidebar attention state.
@@ -1468,8 +1488,8 @@ export class InventTasksMainView extends ItemView {
       ? tasks
       : sortTasks(tasks, this.state.sortBy, {
           statuses: ctx.statuses,
-          contextOrder: (ctx as any).contextOrder,
-          tagsOrder: (ctx as any).tagsOrder,
+          contextOrder: ctx.contextOrder,
+          tagsOrder: ctx.tagsOrder,
           customFields: ctx.customFields,
           subtaskStats: ctx.subtaskStats,
           taskTitles: ctx.taskTitles,
@@ -1541,13 +1561,13 @@ export class InventTasksMainView extends ItemView {
         renderGanttView({
           parent, tasks: sorted, state: this.state, plugin: this.plugin,
           onTaskClick: (t) => this.openTask(t),
-          context: ctx as any,
+          context: ctx,
           nav: {
             // Nav clears the saved scroll offset so the view re-centers on the
             // (possibly new) anchor; toggles below leave it to preserve scroll.
-            onZoom: (z) => { this.state.ganttZoom = z; (this.state as any).__tgScrollLeft = undefined; this.persistFiltersForCurrentLocation(); this.refreshContent(); },
-            onShift: (dir) => { this.state.timeRefDate = shiftKey(this.state.timeRefDate, this.state.ganttZoom, dir); (this.state as any).__tgScrollLeft = undefined; this.refreshContent(); },
-            onToday: () => { this.state.timeRefDate = todayKey(); (this.state as any).__tgScrollLeft = undefined; this.refreshContent(); },
+            onZoom: (z) => { this.state.ganttZoom = z; (this.state as TransientViewState).__tgScrollLeft = undefined; this.persistFiltersForCurrentLocation(); this.refreshContent(); },
+            onShift: (dir) => { this.state.timeRefDate = shiftKey(this.state.timeRefDate, this.state.ganttZoom, dir); (this.state as TransientViewState).__tgScrollLeft = undefined; this.refreshContent(); },
+            onToday: () => { this.state.timeRefDate = todayKey(); (this.state as TransientViewState).__tgScrollLeft = undefined; this.refreshContent(); },
           },
           onToggleDeps: () => { this.state.ganttShowDependencies = !this.state.ganttShowDependencies; this.persistFiltersForCurrentLocation(); this.refreshContent(); },
           onToggleProgress: () => { this.state.ganttShowProgress = !this.state.ganttShowProgress; this.persistFiltersForCurrentLocation(); this.refreshContent(); },
@@ -1558,11 +1578,11 @@ export class InventTasksMainView extends ItemView {
         renderTimelineView({
           parent, tasks: sorted, state: this.state, plugin: this.plugin,
           onTaskClick: (t) => this.openTask(t),
-          context: ctx as any,
+          context: ctx,
           nav: {
-            onZoom: (z) => { this.state.timelineZoom = z; (this.state as any).__tgScrollLeft = undefined; this.persistFiltersForCurrentLocation(); this.refreshContent(); },
-            onShift: (dir) => { this.state.timeRefDate = shiftKey(this.state.timeRefDate, this.state.timelineZoom, dir); (this.state as any).__tgScrollLeft = undefined; this.refreshContent(); },
-            onToday: () => { this.state.timeRefDate = todayKey(); (this.state as any).__tgScrollLeft = undefined; this.refreshContent(); },
+            onZoom: (z) => { this.state.timelineZoom = z; (this.state as TransientViewState).__tgScrollLeft = undefined; this.persistFiltersForCurrentLocation(); this.refreshContent(); },
+            onShift: (dir) => { this.state.timeRefDate = shiftKey(this.state.timeRefDate, this.state.timelineZoom, dir); (this.state as TransientViewState).__tgScrollLeft = undefined; this.refreshContent(); },
+            onToday: () => { this.state.timeRefDate = todayKey(); (this.state as TransientViewState).__tgScrollLeft = undefined; this.refreshContent(); },
           },
           onRailWidthChange: (width) => { this.state.timelineRailWidth = width; this.persistFiltersForCurrentLocation(); },
         });
@@ -1787,7 +1807,7 @@ export class InventTasksMainView extends ItemView {
     // Attach the colored field-type icon to every entry so the filter picker
     // matches the rest of the app.
     for (const def of out) {
-      const m = fieldIconMeta(def.key, ctx.customFields as any);
+      const m = fieldIconMeta(def.key, ctx.customFields);
       def.icon = m.icon;
       def.color = m.color;
     }
@@ -1922,7 +1942,7 @@ export class InventTasksMainView extends ItemView {
 
   private openExportMenu(e: MouseEvent) {
     const sc = this.locationExportScope();
-    const items: any[] = [];
+    const items: MenuItem[] = [];
     // Gantt/Timeline get a graphical snapshot export (PNG/PDF) in addition to
     // the standard tabular exports every view offers.
     if (this.state.viewType === "gantt" || this.state.viewType === "timeline") {
@@ -1950,7 +1970,7 @@ export class InventTasksMainView extends ItemView {
   // canvas renderer. Mirrors currentViewExportPayload's filter+sort pipeline so
   // the image matches exactly what's on screen.
   private exportTimeGraphic(fmt: TimeExportFormat) {
-    const ctx = this.tasksContext() as any;
+    const ctx = this.tasksContext();
     let tasks = this.collectTasks(ctx);
     if (this.state.location.kind !== "recents") {
       tasks = sortTasks(tasks, this.state.sortBy, {
@@ -1989,8 +2009,8 @@ export class InventTasksMainView extends ItemView {
     if (this.state.location.kind !== "recents") {
       tasks = sortTasks(tasks, this.state.sortBy, {
         statuses: ctx.statuses,
-        contextOrder: (ctx as any).contextOrder,
-        tagsOrder: (ctx as any).tagsOrder,
+        contextOrder: ctx.contextOrder,
+        tagsOrder: ctx.tagsOrder,
         customFields: ctx.customFields,
         subtaskStats: ctx.subtaskStats,
         taskTitles: ctx.taskTitles,
@@ -2038,7 +2058,7 @@ export class InventTasksMainView extends ItemView {
     // Honor feature toggles — a disabled feature's fields are not offered here
     // (matching the config modal's View-defaults picker).
     const scopeFeatures = this.plugin.index.resolveFeaturesForLocation(this.state.location);
-    const available = [...filterFieldsByFeatures(availableFieldsFor(view as any), scopeFeatures), ...cfs.map((cf) => `custom_field:${cf.id}`)];
+    const available = [...filterFieldsByFeatures(availableFieldsFor(view), scopeFeatures), ...cfs.map((cf) => `custom_field:${cf.id}`)];
     const labelFor = (f: string): string => {
       if (f.startsWith("custom_field:")) return cfs.find((c) => c.id === f.slice(13))?.name || f;
       return this.fieldLabel(f);
@@ -2086,7 +2106,7 @@ export class InventTasksMainView extends ItemView {
 
         // ----- View options: calendar period + color; chip name/empty toggles -----
         if (isChipView) {
-          const ctx = this.tasksContext() as any;
+          const ctx = this.tasksContext();
           const opts = wrap.createDiv({ cls: "it-fields-options" });
 
           if (isCalendar) {
@@ -2143,7 +2163,7 @@ export class InventTasksMainView extends ItemView {
 
         // ----- Field-type icons toggle (List/Table headers + Board/Calendar chips) -----
         if (isFieldIconView) {
-          const ictx = this.tasksContext() as any;
+          const ictx = this.tasksContext();
           const opts = wrap.createDiv({ cls: "it-fields-options" });
           const row = opts.createDiv({ cls: "it-fields-opt-row" });
           row.createSpan({ cls: "it-field-label", text: t("customize.fieldIcons") });
@@ -2155,7 +2175,7 @@ export class InventTasksMainView extends ItemView {
 
         // ----- View options: Gantt/Timeline zoom + bar color source -----
         if (isTimeView) {
-          const tctx = this.tasksContext() as any;
+          const tctx = this.tasksContext();
           const opts = wrap.createDiv({ cls: "it-fields-options" });
 
           const zoomRow = opts.createDiv({ cls: "it-fields-opt-row" });
@@ -2262,8 +2282,8 @@ export class InventTasksMainView extends ItemView {
         row.createSpan({ text: t("customize.setDefaultFor"), cls: "it-field-label" });
         for (const lvl of this.applicableScopeLevels()) {
           const b = row.createEl("button", { cls: "it-btn-secondary it-btn-mini", text: lvl.label, attr: { type: "button" } });
-          b.addEventListener("click", async () => {
-            const eff = this.tasksContext() as any;
+          b.addEventListener("click", fireAndForget(async () => {
+            const eff = this.tasksContext();
             const patch: ViewDefaults = { visible_fields: visible.slice() };
             if ((isCalendar || isTimeView) && typeof eff.calendarColorBy === "string") patch.color_by = eff.calendarColorBy;
             if ((isCalendar || isTimeView) && typeof eff.dateField === "string") patch.date_field = eff.dateField;
@@ -2274,10 +2294,10 @@ export class InventTasksMainView extends ItemView {
             try {
               await this.plugin.index.setScopeViewDefaults(lvl.level, lvl.path, view, patch);
               new Notice(t("main.defaultSet", { label: lvl.label }));
-            } catch (err: any) {
-              new Notice(t("common.failed", { msg: err.message }));
+            } catch (err) {
+              new Notice(t("common.failed", { msg: (err as Error).message }));
             }
-          });
+          }));
         }
       };
       render();
@@ -2430,11 +2450,11 @@ export class InventTasksMainView extends ItemView {
     this.state.cfShowWhenEmpty = typeof v.cf_show_when_empty === "boolean" ? v.cf_show_when_empty : undefined;
     this.state.cfShowTypeIcon = typeof v.cf_show_type_icon === "boolean" ? v.cf_show_type_icon : undefined;
     // Time-based views: zoom + Gantt toggles. ("flexible" maps onto month.)
-    if (v.gantt_time_period) this.state.ganttZoom = (v.gantt_time_period === "flexible" ? "month" : v.gantt_time_period) as TimeZoom;
+    if (v.gantt_time_period) this.state.ganttZoom = (v.gantt_time_period === "flexible" ? "month" : v.gantt_time_period);
     if (typeof v.gantt_show_dependencies === "boolean") this.state.ganttShowDependencies = v.gantt_show_dependencies;
     if (typeof v.gantt_show_progress === "boolean") this.state.ganttShowProgress = v.gantt_show_progress;
     if (v.type === "gantt") this.state.ganttRailWidth = normalizeTimeRailWidth(v.gantt_rail_width, GANTT_RAIL_DEFAULT_W);
-    if (v.timeline_zoom) this.state.timelineZoom = v.timeline_zoom as TimeZoom;
+    if (v.timeline_zoom) this.state.timelineZoom = v.timeline_zoom;
     if (v.type === "timeline") this.state.timelineRailWidth = normalizeTimeRailWidth(v.timeline_rail_width, TIMELINE_RAIL_DEFAULT_W);
     this.state.timelineShowUnscheduled = typeof v.timeline_show_unscheduled === "boolean" ? v.timeline_show_unscheduled : undefined;
     const lo = v.layout_options;
@@ -2473,7 +2493,7 @@ export class InventTasksMainView extends ItemView {
     const isCal = this.state.viewType === "calendar";
     const isChipView = isCal || this.state.viewType === "board";
     const isFieldIconView = ["list", "table", "board", "calendar"].includes(this.state.viewType);
-    const ctx = this.tasksContext() as any;
+    const ctx = this.tasksContext();
     const view: ViewConfig = {
       view_id: "VW-" + Math.random().toString(36).slice(2, 8).toUpperCase(),
       name,
@@ -2526,42 +2546,42 @@ export class InventTasksMainView extends ItemView {
   }
 
   private showSaveViewPopover(e: MouseEvent) {
-    this.promptViewName(e.currentTarget as HTMLElement, "", async (name) => {
+    this.promptViewName(e.currentTarget as HTMLElement, "", fireAndForget(async (name) => {
       try {
         await this.plugin.index.saveView(this.currentViewConfig(name), this.saveLocationArg());
         new Notice(t("main.viewSaved", { name }));
-      } catch (err: any) {
-        new Notice(t("main.viewSaveFailed", { msg: err.message }));
+      } catch (err) {
+        new Notice(t("main.viewSaveFailed", { msg: (err as Error).message }));
       }
-    });
+    }));
   }
 
   private showViewMenu(e: MouseEvent, v: ViewConfig, canLeft: boolean, canRight: boolean) {
     const anchor = e.target as HTMLElement;
-    const items: any[] = [];
-    if (canLeft) items.push({ label: t("action.moveLeft"), icon: "arrow-left", onClick: () => this.moveBarItem("view", v.view_id, -1) });
-    if (canRight) items.push({ label: t("action.moveRight"), icon: "arrow-right", onClick: () => this.moveBarItem("view", v.view_id, 1) });
+    const items: MenuItem[] = [];
+    if (canLeft) items.push({ label: t("action.moveLeft"), icon: "arrow-left", onClick: () => void this.moveBarItem("view", v.view_id, -1) });
+    if (canRight) items.push({ label: t("action.moveRight"), icon: "arrow-right", onClick: () => void this.moveBarItem("view", v.view_id, 1) });
     if (canLeft || canRight) items.push("separator");
     items.push({ label: v.default ? t("action.unsetDefault") : t("action.setDefault"), icon: "star",
-      onClick: () => v.default
+      onClick: () => void (v.default
         ? this.plugin.index.updateView(v.view_id, { default: false })
-        : this.plugin.index.setViewsBarDefault(v.location || locationKey(this.state.location), "view", v.view_id) });
-    items.push({ label: t("action.updateView"), icon: "save", onClick: async () => {
+        : this.plugin.index.setViewsBarDefault(v.location || locationKey(this.state.location), "view", v.view_id)) });
+    items.push({ label: t("action.updateView"), icon: "save", onClick: fireAndForget(async () => {
         const patch = this.currentViewConfig(v.name);
-        delete (patch as any).view_id;
+        delete (patch as Partial<ViewConfig>).view_id;
         await this.plugin.index.updateView(v.view_id, patch);
         new Notice(t("main.viewUpdated", { name: v.name }));
-      } });
+      }) });
     items.push({ label: menuLabel("rename"), icon: "pencil", onClick: () => {
-        this.promptViewName(anchor, v.name, (name) => this.plugin.index.updateView(v.view_id, { name }));
+        this.promptViewName(anchor, v.name, (name) => void this.plugin.index.updateView(v.view_id, { name }));
       } });
-    items.push({ label: menuLabel("copyLink"), icon: "link", onClick: () => this.plugin.copyElementLink("view", v.view_id) });
+    items.push({ label: menuLabel("copyLink"), icon: "link", onClick: () => void this.plugin.copyElementLink("view", v.view_id) });
     if (v.__path) {
       items.push("separator");
       items.push(...favoriteToggleItems(this.plugin, v.__path));
     }
     items.push("separator");
-    items.push({ label: t("action.deleteView"), icon: "trash", danger: true, onClick: () => this.plugin.index.deleteView(v.view_id) });
+    items.push({ label: t("action.deleteView"), icon: "trash", danger: true, onClick: () => void this.plugin.index.deleteView(v.view_id) });
     showContextMenu(e, items);
   }
 
@@ -2589,33 +2609,33 @@ export class InventTasksMainView extends ItemView {
 
   private showAddDocPopover(e: MouseEvent) {
     const docColor = resolveViewColorSet(this.plugin.prefs.viewColorScheme, this.plugin.prefs.viewColors)[VIEW_COLOR_INDEX.doc];
-    this.promptViewName(e.currentTarget as HTMLElement, "", async (name) => {
+    this.promptViewName(e.currentTarget as HTMLElement, "", fireAndForget(async (name) => {
       try {
         const id = await this.plugin.index.createDoc(name, this.saveLocationArg(), locationKey(this.state.location), { color: docColor });
         new Notice(t("main.docCreated", { name }));
         this.openDoc(id);
-      } catch (err: any) {
-        new Notice(t("main.docCreateFailed", { msg: err.message }));
+      } catch (err) {
+        new Notice(t("main.docCreateFailed", { msg: (err as Error).message }));
       }
-    }, t("main.docName"));
+    }), t("main.docName"));
   }
 
   private showDocMenu(e: MouseEvent, d: DocMeta, canLeft: boolean, canRight: boolean) {
     const anchor = e.target as HTMLElement;
-    const items: any[] = [];
+    const items: MenuItem[] = [];
     items.push({ label: t("action.open"), icon: "book-open", onClick: () => this.openDoc(d.doc_id) });
     if (canLeft || canRight) items.push("separator");
-    if (canLeft) items.push({ label: t("action.moveLeft"), icon: "arrow-left", onClick: () => this.moveBarItem("doc", d.doc_id, -1) });
-    if (canRight) items.push({ label: t("action.moveRight"), icon: "arrow-right", onClick: () => this.moveBarItem("doc", d.doc_id, 1) });
+    if (canLeft) items.push({ label: t("action.moveLeft"), icon: "arrow-left", onClick: () => void this.moveBarItem("doc", d.doc_id, -1) });
+    if (canRight) items.push({ label: t("action.moveRight"), icon: "arrow-right", onClick: () => void this.moveBarItem("doc", d.doc_id, 1) });
     items.push("separator");
     items.push({ label: d.default ? t("action.unsetDefault") : t("action.setDefault"), icon: "star",
-      onClick: () => d.default
+      onClick: () => void (d.default
         ? this.plugin.index.updateDoc(d.doc_id, { default: false })
-        : this.plugin.index.setViewsBarDefault(d.location || locationKey(this.state.location), "doc", d.doc_id) });
-    items.push({ label: menuLabel("rename"), icon: "pencil", onClick: () => this.promptViewName(anchor, d.name, (name) => this.plugin.index.updateDoc(d.doc_id, { name }), t("main.docName")) });
+        : this.plugin.index.setViewsBarDefault(d.location || locationKey(this.state.location), "doc", d.doc_id)) });
+    items.push({ label: menuLabel("rename"), icon: "pencil", onClick: () => this.promptViewName(anchor, d.name, (name) => void this.plugin.index.updateDoc(d.doc_id, { name }), t("main.docName")) });
     items.push({ label: menuLabel("move"), icon: "folder-input", onClick: () => new MoveDocModal(this.app, this.plugin, d.doc_id).open() });
-    items.push({ label: menuLabel("copyLink"), icon: "link", onClick: () => this.plugin.copyElementLink("doc", d.doc_id) });
-    items.push({ label: menuLabel("copyId"), icon: "fingerprint", onClick: () => this.plugin.copyTextToClipboard(d.doc_id) });
+    items.push({ label: menuLabel("copyLink"), icon: "link", onClick: () => void this.plugin.copyElementLink("doc", d.doc_id) });
+    items.push({ label: menuLabel("copyId"), icon: "fingerprint", onClick: () => void this.plugin.copyTextToClipboard(d.doc_id) });
     if (d.__path) {
       items.push("separator");
       items.push(...favoriteToggleItems(this.plugin, d.__path));
@@ -2626,11 +2646,11 @@ export class InventTasksMainView extends ItemView {
             title: t("docsMgr.deleteTitle"),
             message: t("main.deleteDocMsg", { name: d.name }),
             destructive: true,
-            onConfirm: async () => {
+            onConfirm: fireAndForget(async () => {
               if (this.activeDocId === d.doc_id) { this.activeDocId = undefined; this.activeDocPageId = undefined; }
               await this.plugin.index.deleteDoc(d.doc_id);
               new Notice(t("docsMgr.deleted", { name: d.name }));
-            },
+            }),
           }).open();
         } });
     showContextMenu(e, items);
@@ -2690,10 +2710,10 @@ export class InventTasksMainView extends ItemView {
       head.createDiv({ cls: "it-flex-grow" });
       const addTop = head.createEl("button", { cls: "it-icon-btn", attr: { type: "button", title: t("doc.addPage"), "aria-label": t("doc.addPage") } });
       setIcon(addTop, "file-plus");
-      addTop.addEventListener("click", async () => {
+      addTop.addEventListener("click", fireAndForget(async () => {
         const id = await this.plugin.index.createPage(doc.doc_id, { title: t("common.untitled") });
         if (id) { this.activeDocPageId = id; this.refreshContent(); }
-      });
+      }));
       const hide = head.createEl("button", { cls: "it-icon-btn", attr: { type: "button", title: t("doc.hideExplorer"), "aria-label": t("doc.hideExplorer") } });
       setIcon(hide, "panel-left-close");
       hide.addEventListener("click", () => { this.docExplorerHidden = true; this.refreshContent(); });
@@ -2741,10 +2761,10 @@ export class InventTasksMainView extends ItemView {
       });
       setIcon(addSub.createSpan({ cls: "it-doc-tool-ic" }), "file-plus");
       addSub.createSpan({ cls: "it-doc-tool-label", text: t("doc.subpage") });
-      addSub.addEventListener("click", async () => {
+      addSub.addEventListener("click", fireAndForget(async () => {
         const id = await this.plugin.index.createPage(doc.doc_id, { title: t("common.untitled"), parent_page: page.page_id });
         if (id) { this.docCollapsed.delete(page.page_id); this.activeDocPageId = id; this.refreshContent(); }
-      });
+      }));
       const edit = toolbar.createEl("button", {
         cls: "it-doc-tool-btn",
         attr: { type: "button", title: t("doc.editObsidian"), "aria-label": t("doc.editObsidian") },
@@ -2793,8 +2813,8 @@ export class InventTasksMainView extends ItemView {
     ic.addEventListener("click", (e) => {
       e.stopPropagation();
       showContextMenu(e, [
-        { label: t("action.changeIcon"), icon: "image", onClick: () => openIconPicker(ic, page.icon, (v) => this.plugin.index.updatePage(page.page_id, { icon: v })) },
-        { label: t("action.changeColor"), icon: "palette", onClick: () => openColorPicker(ic, page.color, (v) => this.plugin.index.updatePage(page.page_id, { color: v })) },
+        { label: t("action.changeIcon"), icon: "image", onClick: () => openIconPicker(ic, page.icon, (v) => void this.plugin.index.updatePage(page.page_id, { icon: v })) },
+        { label: t("action.changeColor"), icon: "palette", onClick: () => openColorPicker(ic, page.color, (v) => void this.plugin.index.updatePage(page.page_id, { color: v })) },
       ]);
     });
     row.createSpan({ cls: "it-doc-page-title", text: page.title });
@@ -2833,34 +2853,34 @@ export class InventTasksMainView extends ItemView {
   private showPageMenu(e: MouseEvent, doc: DocMeta, page: DocPage) {
     const anchor = e.target as HTMLElement;
     showContextMenu(e, [
-      { label: t("common.addSubpage"), icon: "file-plus", onClick: async () => {
+      { label: t("common.addSubpage"), icon: "file-plus", onClick: fireAndForget(async () => {
           const id = await this.plugin.index.createPage(doc.doc_id, { title: t("common.untitled"), parent_page: page.page_id });
           if (id) { this.docCollapsed.delete(page.page_id); this.activeDocPageId = id; this.refreshContent(); }
-        } },
-      { label: menuLabel("rename"), icon: "pencil", onClick: () => this.promptViewName(anchor, page.title, (title) => this.plugin.index.updatePage(page.page_id, { title }), t("main.pageTitle")) },
-      { label: t("action.changeIcon"), icon: "image", onClick: () => openIconPicker(anchor, page.icon, (v) => this.plugin.index.updatePage(page.page_id, { icon: v })) },
-      { label: t("action.changeColor"), icon: "palette", onClick: () => openColorPicker(anchor, page.color, (v) => this.plugin.index.updatePage(page.page_id, { color: v })) },
+        }) },
+      { label: menuLabel("rename"), icon: "pencil", onClick: () => this.promptViewName(anchor, page.title, (title) => void this.plugin.index.updatePage(page.page_id, { title }), t("main.pageTitle")) },
+      { label: t("action.changeIcon"), icon: "image", onClick: () => openIconPicker(anchor, page.icon, (v) => void this.plugin.index.updatePage(page.page_id, { icon: v })) },
+      { label: t("action.changeColor"), icon: "palette", onClick: () => openColorPicker(anchor, page.color, (v) => void this.plugin.index.updatePage(page.page_id, { color: v })) },
       { label: t("action.openEditor"), icon: "external-link", onClick: () => this.openPageInObsidian(page) },
-      { label: menuLabel("copyLink"), icon: "link", onClick: () => this.plugin.copyElementLink("doc", doc.doc_id, page.page_id) },
-      { label: menuLabel("copyId"), icon: "fingerprint", onClick: () => this.plugin.copyTextToClipboard(page.page_id) },
+      { label: menuLabel("copyLink"), icon: "link", onClick: () => void this.plugin.copyElementLink("doc", doc.doc_id, page.page_id) },
+      { label: menuLabel("copyId"), icon: "fingerprint", onClick: () => void this.plugin.copyTextToClipboard(page.page_id) },
       "separator",
-      { label: t("action.moveUp"), icon: "arrow-up", onClick: () => this.moveDocPage(doc, page, -1) },
-      { label: t("action.moveDown"), icon: "arrow-down", onClick: () => this.moveDocPage(doc, page, 1) },
+      { label: t("action.moveUp"), icon: "arrow-up", onClick: () => void this.moveDocPage(doc, page, -1) },
+      { label: t("action.moveDown"), icon: "arrow-down", onClick: () => void this.moveDocPage(doc, page, 1) },
       { label: t("action.movePageToDoc"), icon: "folder-input", onClick: () => {
           new DocPickerModal(this.app, this.plugin, {
             title: t("main.movePageTitle", { title: page.title }),
             multi: false,
             excludeIds: [doc.doc_id],
             confirmLabel: menuLabel("move"),
-            onPick: async (picked) => {
+            onPick: fireAndForget(async (picked) => {
               const target = picked[0];
               if (!target) return;
               try {
                 if (this.activeDocPageId === page.page_id) this.activeDocPageId = undefined;
                 await this.plugin.index.movePageToDoc(page.page_id, target);
                 new Notice(t("main.pageMoved"));
-              } catch (err: any) { new Notice(t("common.failed", { msg: err.message })); }
-            },
+              } catch (err) { new Notice(t("common.failed", { msg: (err as Error).message })); }
+            }),
           }).open();
         } },
       "separator",
@@ -2869,10 +2889,10 @@ export class InventTasksMainView extends ItemView {
             title: t("main.deletePageTitle"),
             message: t("main.deletePageMsg", { title: page.title }),
             destructive: true,
-            onConfirm: async () => {
+            onConfirm: fireAndForget(async () => {
               if (this.activeDocPageId === page.page_id) this.activeDocPageId = undefined;
               await this.plugin.index.deletePage(page.page_id);
-            },
+            }),
           }).open();
         } },
     ]);
@@ -3135,7 +3155,7 @@ export class InventTasksMainView extends ItemView {
     createBtn.addEventListener("click", () => void this.plugin.createFirstWorkspace());
     const settingsBtn = ctaRow.createEl("button", { cls: "it-btn-secondary", text: t("main.noWorkspacesSettings") });
     settingsBtn.addEventListener("click", () => {
-      const setting = (this.app as any).setting;
+      const setting = (this.app as unknown as AppWithSetting).setting;
       setting?.open?.();
       setting?.openTabById?.(this.plugin.manifest.id);
     });

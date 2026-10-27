@@ -1,6 +1,6 @@
 import { App, Modal, MarkdownRenderer, Notice, Component, setIcon } from "obsidian";
 import type InventTasksPlugin from "../main";
-import { TaskFile, StatusDef, ChecklistItem, CommentEntry, LinkedValue, TaskAttachment, RecurringConfig, DocMeta, parentTaskIds, normalizeParentTask } from "../types";
+import { TaskFile, TaskData, PriorityId, CustomFieldDef, CustomFieldOption, StatusDef, ChecklistItem, CommentEntry, LinkedValue, TaskAttachment, RecurringConfig, DocMeta, parentTaskIds, normalizeParentTask } from "../types";
 import { DOC_ICON, DOC_ACCENT } from "../constants";
 import { addCfAttachments, removeCfAttachment, renameCfAttachment, addMainAttachments, removeMainAttachment, renameMainAttachment, openAttachmentInDefaultApp, humanFileSize, resolveAttachmentVaultPath, resolveCoverUrl, applyCoverBackground, coverColorValue } from "../data/attachments";
 import { pickCheckboxCheckedStatus, pickCheckboxUncheckedStatus, type CheckboxAction } from "../data/status-helpers";
@@ -37,6 +37,7 @@ import { MAX_TASK_TITLE_LENGTH, parseNonNegativeInteger, validateTaskTitle } fro
 import { SecretModalVisibility } from "../data/secret-fields";
 import { canAttachSubtask } from "../data/subtasks";
 import { fieldLabel as i18nFieldLabel, t as tr, weekdayMin } from "../i18n";
+import { fireAndForget } from "../utils/async";
 
 export class TaskModal extends Modal {
   plugin: InventTasksPlugin;
@@ -214,7 +215,7 @@ export class TaskModal extends Modal {
     return true;
   }
 
-  private async patch(fn: (d: any, body: string) => { data: any; body?: string } | void) {
+  private async patch(fn: (d: TaskData, body: string) => { data: TaskData; body?: string } | void) {
     // updateTask fires emit() which our onChange listener turns into a full
     // render() — that destroys and rebuilds the DOM, which by itself resets
     // the modal's scroll. We capture scrollTop here (synchronously, before
@@ -226,8 +227,8 @@ export class TaskModal extends Modal {
     const beforeScroll = sc.scrollTop;
     try {
       await this.plugin.index.updateTask(this.task.data.id, fn);
-    } catch (e: any) {
-      new Notice(tr("task.notice.updateFailed", { msg: e.message }));
+    } catch (e) {
+      new Notice(tr("task.notice.updateFailed", { msg: (e as Error).message }));
     }
     if (beforeScroll > 0) {
       const sc2 = this.getScrollContainer();
@@ -241,7 +242,7 @@ export class TaskModal extends Modal {
 
   private renderDateTimePair(
     parent: HTMLElement,
-    value: any,
+    value: unknown,
     onChange: (value: string | null) => void | Promise<void>,
   ) {
     // Modal-only styling (`it-mdt`) — larger than the dense list/table controls
@@ -278,7 +279,7 @@ export class TaskModal extends Modal {
   private openCoverMenu(anchor: HTMLElement) {
     const idx = this.plugin.index;
     const closePop = () => document.querySelectorAll(".it-popover").forEach((el) => el.remove());
-    const isImg = (a: any) => /\.(png|jpe?g|gif|webp|svg|bmp|avif)$/i.test(a.name || "") || (a.mime || "").startsWith("image/");
+    const isImg = (a: TaskAttachment) => /\.(png|jpe?g|gif|webp|svg|bmp|avif)$/i.test(a.name || "") || (a.mime || "").startsWith("image/");
     showPopover(anchor, (root) => {
       root.addClass("it-cover-menu");
       const t = this.task;
@@ -290,14 +291,14 @@ export class TaskModal extends Modal {
       const fileInput = root.createEl("input", { type: "file", attr: { accept: "image/*" } });
       fileInput.hide();
       up.addEventListener("click", () => fileInput.click());
-      fileInput.addEventListener("change", async () => {
+      fileInput.addEventListener("change", fireAndForget(async () => {
         if (!fileInput.files?.length) return;
         closePop();
         await addMainAttachments(idx, t.data.id, fileInput.files);
         const atts = this.task.data.attachments || [];
         const last = atts[atts.length - 1];
         if (last) await this.setCover(resolveAttachmentVaultPath(idx, t.data.id, last));
-      });
+      }));
 
       // Pick from existing image attachments.
       const imgs = (t.data.attachments || []).filter(isImg);
@@ -310,7 +311,7 @@ export class TaskModal extends Modal {
           const item = list.createEl("button", { cls: "it-cover-menu-att", attr: { type: "button", title: a.name } });
           const vp = resolveAttachmentVaultPath(idx, t.data.id, a);
           item.style.backgroundImage = `url("${resolveCoverUrl(idx, vp)}")`;
-          item.addEventListener("click", async () => { closePop(); await this.setCover(vp); });
+          item.addEventListener("click", fireAndForget(async () => { closePop(); await this.setCover(vp); }));
         }
       }
 
@@ -321,7 +322,7 @@ export class TaskModal extends Modal {
       const colorInput = colorRow.createEl("input", { type: "color" });
       colorInput.value = coverColorValue(t.data.cover_image) || "#7c5cff";
       const colorBtn = colorRow.createEl("button", { cls: "it-btn-primary it-btn-mini", text: tr("common.set"), attr: { type: "button" } });
-      colorBtn.addEventListener("click", async () => { closePop(); await this.setCover(`color:${colorInput.value}`); });
+      colorBtn.addEventListener("click", fireAndForget(async () => { closePop(); await this.setCover(`color:${colorInput.value}`); }));
 
       // From URL.
       root.createDiv({ cls: "it-cover-menu-label", text: tr("task.cover.fromUrl") });
@@ -329,13 +330,13 @@ export class TaskModal extends Modal {
       const input = urlRow.createEl("input", { cls: "it-input", attr: { type: "text", placeholder: tr("task.cover.urlPlaceholder") } });
       input.value = (t.data.cover_image && /^https?:/i.test(t.data.cover_image)) ? t.data.cover_image : "";
       const setBtn = urlRow.createEl("button", { cls: "it-btn-primary it-btn-mini", text: tr("common.set"), attr: { type: "button" } });
-      setBtn.addEventListener("click", async () => { const v = input.value.trim(); if (!v) return; closePop(); await this.setCover(v); });
+      setBtn.addEventListener("click", fireAndForget(async () => { const v = input.value.trim(); if (!v) return; closePop(); await this.setCover(v); }));
 
       if (t.data.cover_image) {
         const rm = root.createEl("button", { cls: "it-cover-menu-item it-cover-menu-remove", attr: { type: "button" } });
         setIcon(rm.createSpan({ cls: "it-cover-menu-ic" }), "trash");
         rm.createSpan({ text: tr("task.cover.removeCover") });
-        rm.addEventListener("click", async () => { closePop(); await this.setCover(undefined); });
+        rm.addEventListener("click", fireAndForget(async () => { closePop(); await this.setCover(undefined); }));
       }
     });
   }
@@ -404,13 +405,13 @@ export class TaskModal extends Modal {
     favBtn.addEventListener("click", (e) => showContextMenu(e, favoriteToggleItems(this.plugin, t.data.id)));
     const linkBtn = headerActions.createEl("button", { cls: "it-icon-btn", attr: { "aria-label": tr("task.header.copyLink") } });
     setIcon(linkBtn, "link");
-    linkBtn.addEventListener("click", () => this.plugin.copyElementLink("task", t.data.id));
+    linkBtn.addEventListener("click", () => void this.plugin.copyElementLink("task", t.data.id));
     const openBtn = headerActions.createEl("button", { cls: "it-icon-btn", attr: { "aria-label": tr("task.header.openMd") } });
     setIcon(openBtn, "external-link");
-    openBtn.addEventListener("click", async () => {
+    openBtn.addEventListener("click", fireAndForget(async () => {
       await this.plugin.index.openTaskInEditor(t.data.id);
       this.close();
-    });
+    }));
     const exportBtn = headerActions.createEl("button", { cls: "it-icon-btn", attr: { "aria-label": tr("task.header.export") } });
     setIcon(exportBtn, "download");
     exportBtn.addEventListener("click", () => {
@@ -431,16 +432,16 @@ export class TaskModal extends Modal {
       attr: { "aria-label": tr(t.data.archived ? "common.unarchive" : "common.archive") },
     });
     setIcon(archiveBtn, t.data.archived ? "archive-restore" : "archive");
-    archiveBtn.addEventListener("click", async () => {
+    archiveBtn.addEventListener("click", fireAndForget(async () => {
       const archived = !t.data.archived;
       try {
         await this.plugin.index.setTasksArchived([t.data.id], archived);
         new Notice(tr(archived ? "table.bulkArchived" : "table.bulkUnarchived", { count: 1 }));
         this.close();
-      } catch (error: any) {
-        new Notice(tr("common.failed", { msg: error?.message ?? String(error) }));
+      } catch (error) {
+        new Notice(tr("common.failed", { msg: (error as Error | undefined)?.message ?? String(error) }));
       }
-    });
+    }));
     const delBtn = headerActions.createEl("button", { cls: "it-icon-btn it-danger", attr: { "aria-label": tr("task.header.delete") } });
     setIcon(delBtn, "trash");
     delBtn.addEventListener("click", () => {
@@ -448,10 +449,10 @@ export class TaskModal extends Modal {
         title: tr("task.confirm.deleteTitle"),
         message: tr("task.confirm.deleteMsg", { title: t.data.title }),
         destructive: true,
-        onConfirm: async () => {
+        onConfirm: fireAndForget(async () => {
           await this.plugin.index.deleteTask(t.data.id);
           this.close();
-        },
+        }),
       }).open();
     });
 
@@ -477,10 +478,10 @@ export class TaskModal extends Modal {
             parent: root,
             current: t.data.type || "task",
             items: taskTypes.map((tt) => ({ value: tt.id, label: tt.name, color: tt.color, icon: tt.icon })),
-            onSelect: async (v) => {
+            onSelect: fireAndForget(async (v) => {
               await this.patch((d) => ({ data: { ...d, type: v } }));
               document.querySelectorAll(".it-popover").forEach((el) => el.remove());
-            },
+            }),
           });
         });
       });
@@ -565,7 +566,7 @@ export class TaskModal extends Modal {
     });
     titleEl.value = t.data.title || "";
     titleEl.placeholder = tr("task.titlePlaceholder");
-    titleEl.addEventListener("change", async () => {
+    titleEl.addEventListener("change", fireAndForget(async () => {
       const checkedTitle = validateTaskTitle(titleEl.value);
       if (!checkedTitle.valid) {
         const message = checkedTitle.reason === "required"
@@ -579,7 +580,7 @@ export class TaskModal extends Modal {
       if (v !== t.data.title) await this.patch((d) => ({
         data: { ...d, title: v, activity: appendActivity(d.activity, { kind: "title", from: d.title, to: v }) },
       }));
-    });
+    }));
 
     // ----- Layout scaffold -----
     // Desktop "wide" mode splits the body into a wider main column (left,
@@ -639,7 +640,7 @@ export class TaskModal extends Modal {
               ...statusSet.map((s) => ({ value: s.id, label: s.name, color: s.color })),
               { value: "", label: tr("action.noStatus"), color: "var(--text-muted)" },
             ],
-            onSelect: async (v) => {
+            onSelect: fireAndForget(async (v) => {
               document.querySelectorAll(".it-popover").forEach((el) => el.remove());
               if (!v) {
                 // Clear status → also clear status_group, otherwise the task keeps
@@ -650,7 +651,7 @@ export class TaskModal extends Modal {
                 return;
               }
               await this.applyStatusChange(v, statusSet);
-            },
+            }),
             footer: [
               {
                 label: tr("task.header.editStatuses"),
@@ -665,19 +666,19 @@ export class TaskModal extends Modal {
     if (features.priorities !== false) renderFieldIcon(bar, "priority");
     if (features.priorities !== false) priorityChip(bar, t.data.priority, priorities, (e) => {
       showPopover(e.currentTarget as HTMLElement, (root) => {
-        buildDropdown({
+        buildDropdown<PriorityId | null>({
           parent: root,
           current: t.data.priority,
           items: [
-            ...priorities.map((p) => ({ value: p.id as any, label: p.label, color: p.color })),
-            { value: null as any, label: tr("task.header.noPriority"), color: "#9E9E9E" },
+            ...priorities.map((p) => ({ value: p.id, label: p.label, color: p.color })),
+            { value: null, label: tr("task.header.noPriority"), color: "#9E9E9E" },
           ],
-          onSelect: async (v, popover) => {
+          onSelect: fireAndForget(async (v, popover) => {
             popover?.remove();
             await this.patch((d) => ({
               data: { ...d, priority: v ?? null, activity: appendActivity(d.activity, { kind: "priority", from: d.priority ?? null, to: v ?? null }) },
             }));
-          },
+          }),
           footer: [
             { label: tr("task.header.editPriorities"), onClick: () => new ConfigModal(this.app, this.plugin, "workspace", undefined, "priorities").open() },
           ],
@@ -731,11 +732,11 @@ export class TaskModal extends Modal {
       const estInput = estEdit.createEl("input", { type: "number", cls: "it-input it-input-small it-compact-number-input", attr: { min: "0", step: "1", placeholder: "min" } });
       estInput.value = String(t.data.time_estimate ?? "");
       estEdit.createSpan({ cls: "it-input-suffix", text: "min" });
-      estInput.addEventListener("change", async () => {
+      estInput.addEventListener("change", fireAndForget(async () => {
         const checked = parseNonNegativeInteger(estInput.value);
         if (!checked.valid) { estInput.value = String(t.data.time_estimate ?? ""); new Notice(tr("err.taskMetricInvalid")); return; }
         await this.patch((d) => ({ data: { ...d, time_estimate: checked.value } }));
-      });
+      }));
     }
 
     // Time tracked
@@ -746,11 +747,11 @@ export class TaskModal extends Modal {
       const trackedInput = trackedEdit.createEl("input", { type: "number", cls: "it-input it-input-small it-compact-number-input", attr: { min: "0", step: "1", placeholder: "min" } });
       trackedInput.value = String(t.data.time_tracked ?? "");
       trackedEdit.createSpan({ cls: "it-input-suffix", text: "min" });
-      trackedInput.addEventListener("change", async () => {
+      trackedInput.addEventListener("change", fireAndForget(async () => {
         const checked = parseNonNegativeInteger(trackedInput.value);
         if (!checked.valid) { trackedInput.value = String(t.data.time_tracked ?? ""); new Notice(tr("err.taskMetricInvalid")); return; }
         await this.patch((d) => ({ data: { ...d, time_tracked: checked.value } }));
-      });
+      }));
     }
 
     // Sprint points
@@ -761,11 +762,11 @@ export class TaskModal extends Modal {
       const spInput = spEdit.createEl("input", { type: "number", cls: "it-input it-input-small it-compact-number-input", attr: { min: "0", step: "1", placeholder: "pts" } });
       spInput.value = String(t.data.sprint_points ?? "");
       spEdit.createSpan({ cls: "it-input-suffix", text: "pts" });
-      spInput.addEventListener("change", async () => {
+      spInput.addEventListener("change", fireAndForget(async () => {
         const checked = parseNonNegativeInteger(spInput.value);
         if (!checked.valid) { spInput.value = String(t.data.sprint_points ?? ""); new Notice(tr("err.taskMetricInvalid")); return; }
         await this.patch((d) => ({ data: { ...d, sprint_points: checked.value } }));
-      });
+      }));
     }
 
     // ----- Recurring (due-date repeat config) -----
@@ -792,12 +793,12 @@ export class TaskModal extends Modal {
         for (const tg of tags) {
           const chip = tagChip(tagsList, tg, colorMap.get(tg), undefined, chipStyles);
           const x = chip.createSpan({ text: "×", cls: "it-tag-remove" });
-          x.addEventListener("click", async (ev) => {
+          x.addEventListener("click", fireAndForget(async (ev) => {
             ev.stopPropagation();
             const next = (t.data.tags || []).filter((y) => y !== tg);
             await this.patch((d) => ({ data: { ...d, tags: next } }));
             renderTags();
-          });
+          }));
         }
         const addBtn = tagsList.createEl("button", { cls: "it-chip it-chip-add it-chip-add-icon", attr: { "aria-label": tr("task.tags.add"), title: tr("task.tags.add") } });
         setIcon(addBtn, "plus");
@@ -831,7 +832,7 @@ export class TaskModal extends Modal {
                 const item = listEl.createEl("button", { cls: "it-tag-picker-item" + (isOn ? " is-active" : "") });
                 if (td.color) item.style.setProperty("--chip-color", td.color);
                 item.createSpan({ text: "#" + td.name, cls: "it-tag-picker-name" });
-                item.addEventListener("mousedown", async (ev) => {
+                item.addEventListener("mousedown", fireAndForget(async (ev) => {
                   ev.preventDefault();
                   ev.stopPropagation();
                   const next = current.has(td.name)
@@ -840,12 +841,12 @@ export class TaskModal extends Modal {
                   await this.patch((d) => ({ data: { ...d, tags: next } }));
                   renderTags();
                   refresh(searchInput.value.trim());
-                });
+                }));
               }
               if (q && !palette2.some((td) => td.name.toLowerCase() === q) && !(t.data.tags || []).includes(q)) {
                 const addItem = listEl.createEl("button", { cls: "it-tag-picker-item it-tag-picker-add" });
                 addItem.setText(tr("task.tags.addNamed", { name: query }));
-                addItem.addEventListener("mousedown", async (ev) => {
+                addItem.addEventListener("mousedown", fireAndForget(async (ev) => {
                   ev.preventDefault();
                   ev.stopPropagation();
                   const next = [...(t.data.tags || []), query];
@@ -853,11 +854,11 @@ export class TaskModal extends Modal {
                   renderTags();
                   searchInput.value = "";
                   refresh("");
-                });
+                }));
               }
             };
             searchInput.addEventListener("input", () => refresh(searchInput.value.trim()));
-            searchInput.addEventListener("keydown", async (ev) => {
+            searchInput.addEventListener("keydown", fireAndForget(async (ev) => {
               if (ev.key === "Enter") {
                 ev.preventDefault();
                 const v = searchInput.value.trim();
@@ -869,7 +870,7 @@ export class TaskModal extends Modal {
                   refresh("");
                 }
               }
-            });
+            }));
             refresh("");
             window.requestAnimationFrame(() => searchInput.focus());
           });
@@ -901,12 +902,12 @@ export class TaskModal extends Modal {
           applyChipStyleByKind(chip, "context", chipStyles);
           chip.createSpan({ text: cx });
           const x = chip.createSpan({ text: "×", cls: "it-tag-remove" });
-          x.addEventListener("click", async (ev) => {
+          x.addEventListener("click", fireAndForget(async (ev) => {
             ev.stopPropagation();
             const next = (t.data.context || []).filter((y) => y !== cx);
             await this.patch((d) => ({ data: { ...d, context: next } }));
             renderContext();
-          });
+          }));
         }
         const addBtn = ctxList.createEl("button", { cls: "it-chip it-chip-add it-chip-add-icon", attr: { "aria-label": tr("task.context.add"), title: tr("task.context.add") } });
         setIcon(addBtn, "plus");
@@ -939,7 +940,7 @@ export class TaskModal extends Modal {
                 const item = listEl.createEl("button", { cls: "it-tag-picker-item" + (isOn ? " is-active" : "") });
                 if (l.color) item.style.setProperty("--chip-color", l.color);
                 item.createSpan({ text: l.name, cls: "it-tag-picker-name" });
-                item.addEventListener("mousedown", async (ev) => {
+                item.addEventListener("mousedown", fireAndForget(async (ev) => {
                   ev.preventDefault();
                   ev.stopPropagation();
                   const next = current.has(l.name)
@@ -948,12 +949,12 @@ export class TaskModal extends Modal {
                   await this.patch((d) => ({ data: { ...d, context: next } }));
                   renderContext();
                   refresh(searchInput.value.trim());
-                });
+                }));
               }
               if (q && !palette2.some((l) => l.name.toLowerCase() === q) && !(t.data.context || []).includes(query)) {
                 const addItem = listEl.createEl("button", { cls: "it-tag-picker-item it-tag-picker-add" });
                 addItem.setText(tr("task.context.addNamed", { name: query }));
-                addItem.addEventListener("mousedown", async (ev) => {
+                addItem.addEventListener("mousedown", fireAndForget(async (ev) => {
                   ev.preventDefault();
                   ev.stopPropagation();
                   const next = [...(t.data.context || []), query];
@@ -961,11 +962,11 @@ export class TaskModal extends Modal {
                   renderContext();
                   searchInput.value = "";
                   refresh("");
-                });
+                }));
               }
             };
             searchInput.addEventListener("input", () => refresh(searchInput.value.trim()));
-            searchInput.addEventListener("keydown", async (ev) => {
+            searchInput.addEventListener("keydown", fireAndForget(async (ev) => {
               if (ev.key === "Enter") {
                 ev.preventDefault();
                 const v = searchInput.value.trim();
@@ -977,7 +978,7 @@ export class TaskModal extends Modal {
                   refresh("");
                 }
               }
-            });
+            }));
             refresh("");
             window.requestAnimationFrame(() => searchInput.focus());
           });
@@ -1002,7 +1003,7 @@ export class TaskModal extends Modal {
           text: tr(allVisible ? "secret.lockAll" : "secret.unlockAll"),
         });
         setIcon(secretsBtn.createSpan({ cls: "it-secret-btn-icon" }), allVisible ? "eye-off" : "eye");
-        secretsBtn.addEventListener("click", async () => {
+        secretsBtn.addEventListener("click", fireAndForget(async () => {
           if (secretFields.every((field) => this.isSecretFieldVisibleInModal(field.id))) {
             this.secretVisibility.hideAll(secretFields.map((field) => field.id));
             for (const field of secretFields) {
@@ -1025,7 +1026,7 @@ export class TaskModal extends Modal {
           this.secretVisibility.revealAll();
           if (failed) new Notice(tr("secret.decryptFailed"));
           this.render();
-        });
+        }));
 
         const workspaceVisible = this.plugin.isSecretWorkspaceUnlocked();
         const workspaceBtn = secretActions.createEl("button", {
@@ -1033,14 +1034,14 @@ export class TaskModal extends Modal {
           text: tr(workspaceVisible ? "secret.lockWorkspace" : "secret.unlockWorkspace"),
         });
         setIcon(workspaceBtn.createSpan({ cls: "it-secret-btn-icon" }), workspaceVisible ? "lock-keyhole" : "key-round");
-        workspaceBtn.addEventListener("click", async () => {
+        workspaceBtn.addEventListener("click", fireAndForget(async () => {
           if (this.plugin.isSecretWorkspaceUnlocked()) {
             this.plugin.lockSecretWorkspace();
           } else if (await this.plugin.unlockSecretWorkspace()) {
             this.secretVisibility.clearHidden();
             this.render();
           }
-        });
+        }));
       }
 
       if (customFields.length === 0) {
@@ -1093,29 +1094,29 @@ export class TaskModal extends Modal {
         chip.createSpan({ text: ln ? ln.config.name : p });
         const x = chip.createSpan({ text: "×", cls: "it-tag-remove" });
         x.setAttribute("aria-label", tr("task.lists.removeFromList"));
-        x.addEventListener("click", async (ev) => {
+        x.addEventListener("click", fireAndForget(async (ev) => {
           ev.stopPropagation();
           new ConfirmModal(this.app, {
             title: tr("modal.deleteConfirm"),
             message: tr("action.removeFromList"),
             destructive: true,
             confirmLabel: tr("common.remove"),
-            onConfirm: async () => {
+            onConfirm: fireAndForget(async () => {
               try { await this.plugin.index.removeTaskFromList(t.data.id, p); }
-              catch (e: any) { new Notice(tr("task.notice.failed", { msg: e.message })); }
-            },
+              catch (e) { new Notice(tr("task.notice.failed", { msg: (e as Error).message })); }
+            }),
           }).open();
-        });
+        }));
       }
       if (additional.length === 0) listsRow.createSpan({ cls: "it-empty-inline", text: tr("task.lists.onlyHome") });
 
       addToListBtn.addEventListener("click", () => {
         new AddToListModal(this.app, this.plugin, {
           excludePaths: [t.listPath || "", ...additional],
-          onPick: async (listPath) => {
+          onPick: fireAndForget(async (listPath) => {
             try { await this.plugin.index.addTaskToList(t.data.id, listPath); }
-            catch (e: any) { new Notice(tr("task.notice.failed", { msg: e.message })); }
-          },
+            catch (e) { new Notice(tr("task.notice.failed", { msg: (e as Error).message })); }
+          }),
         }).open();
       });
     }
@@ -1151,12 +1152,12 @@ export class TaskModal extends Modal {
         source: { id: t.data.id, title: t.data.title || tr("task.untitled"), icon: t.data.icon, color: t.data.color },
         contextLabel: tr("task.parents.pickerContext", { title: t.data.title || tr("task.untitled") }),
         confirmLabel: tr("task.picker.add"),
-        onPick: async (picked) => {
+        onPick: fireAndForget(async (picked) => {
           const newParents = picked.filter((p) => !currentParents.includes(p));
           const next = [...currentParents, ...newParents];
           try {
             // Single write on current task: parent_task + one activity entry per new parent
-            await this.plugin.index.updateTask(t.data.id, (d) => {
+            await this.plugin.index.updateTask(t.data.id, (d: TaskData) => {
               let activity = d.activity;
               for (const pid of newParents) {
                 activity = appendActivity(activity, { kind: "parent_added", id: pid });
@@ -1165,14 +1166,14 @@ export class TaskModal extends Modal {
             });
             // Mirror activity on each new parent's side: "subtask_added"
             for (const pid of newParents) {
-              await this.plugin.index.updateTask(pid, (d) => ({
+              await this.plugin.index.updateTask(pid, (d: TaskData) => ({
                 data: { ...d, activity: appendActivity(d.activity, { kind: "subtask_added", id: t.data.id }) },
               }));
             }
-          } catch (e: any) {
-            new Notice(tr("task.notice.failed", { msg: e.message }));
+          } catch (e) {
+            new Notice(tr("task.notice.failed", { msg: (e as Error).message }));
           }
-        },
+        }),
       }).open();
     });
     if (currentParents.length === 0) {
@@ -1194,20 +1195,20 @@ export class TaskModal extends Modal {
           attr: { "aria-label": tr("task.parents.remove") },
         });
         setIcon(rm, "x");
-        rm.addEventListener("click", async (e) => {
+        rm.addEventListener("click", fireAndForget(async (e) => {
           e.stopPropagation();
           const next = currentParents.filter((x) => x !== pid);
           try {
-            await this.plugin.index.updateTask(t.data.id, (d) => ({
+            await this.plugin.index.updateTask(t.data.id, (d: TaskData) => ({
               data: { ...d, parent_task: normalizeParentTask(next), activity: appendActivity(d.activity, { kind: "parent_removed", id: pid }) },
             }));
-            await this.plugin.index.updateTask(pid, (d) => ({
+            await this.plugin.index.updateTask(pid, (d: TaskData) => ({
               data: { ...d, activity: appendActivity(d.activity, { kind: "subtask_removed", id: t.data.id }) },
             }));
-          } catch (err: any) {
-            new Notice(tr("task.notice.failed", { msg: err.message }));
+          } catch (err) {
+            new Notice(tr("task.notice.failed", { msg: (err as Error).message }));
           }
-        });
+        }));
       }
     }
     } // end modal_parents gate
@@ -1258,12 +1259,12 @@ export class TaskModal extends Modal {
             preset: { parent_task: cur.data.id },
           }).open();
         },
-        onPick: async (picked) => {
+        onPick: fireAndForget(async (picked) => {
           const newlyLinked: string[] = [];
           for (const pid of picked) {
             try {
               let wasAdded = false;
-              await this.plugin.index.updateTask(pid, (d) => {
+              await this.plugin.index.updateTask(pid, (d: TaskData) => {
                 const existing = parentTaskIds(d);
                 if (existing.includes(cur.data.id)) return; // already a parent — no-op
                 wasAdded = true;
@@ -1273,25 +1274,25 @@ export class TaskModal extends Modal {
                 };
               });
               if (wasAdded) newlyLinked.push(pid);
-            } catch (e: any) {
-              new Notice(tr("task.notice.failedLink", { id: pid, msg: e.message }));
+            } catch (e) {
+              new Notice(tr("task.notice.failedLink", { id: pid, msg: (e as Error).message }));
             }
           }
           // Log "subtask_added" on current task for each newly-linked child
           if (newlyLinked.length > 0) {
             try {
-              await this.plugin.index.updateTask(cur.data.id, (d) => {
+              await this.plugin.index.updateTask(cur.data.id, (d: TaskData) => {
                 let activity = d.activity;
                 for (const pid of newlyLinked) {
                   activity = appendActivity(activity, { kind: "subtask_added", id: pid });
                 }
                 return { data: { ...d, activity } };
               });
-            } catch (e: any) {
-              new Notice(tr("task.notice.failed", { msg: e.message }));
+            } catch (e) {
+              new Notice(tr("task.notice.failed", { msg: (e as Error).message }));
             }
           }
-        },
+        }),
       }).open();
     });
     const subtasks = this.plugin.index.allTasks().filter((x) =>
@@ -1304,7 +1305,7 @@ export class TaskModal extends Modal {
         const row = subList.createDiv({ cls: "it-subtask-row" });
         const cb = row.createEl("input", { type: "checkbox" });
         cb.checked = sub.data.status_group === "done" || sub.data.status_group === "closed";
-        cb.addEventListener("change", async () => {
+        cb.addEventListener("change", fireAndForget(async () => {
           const set = this.plugin.index.resolveStatusSet(sub.listPath).statuses;
           // Subtask checkbox has its OWN preference (task_behavior.
           // subtasks_checkbox_action) — independent of the list-row
@@ -1319,10 +1320,10 @@ export class TaskModal extends Modal {
           const target = cb.checked
             ? pickCheckboxCheckedStatus(set, preference)
             : pickCheckboxUncheckedStatus(set);
-          if (target) await this.plugin.index.updateTask(sub.data.id, (d) => ({
+          if (target) await this.plugin.index.updateTask(sub.data.id, (d: TaskData) => ({
             data: { ...d, status: target, activity: appendActivity(d.activity, { kind: "status", from: d.status ?? null, to: target }) },
           }));
-        });
+        }));
         this.renderLinkedTypeIcon(row, sub);
         const title = row.createSpan({ text: sub.data.title, cls: "it-subtask-title" });
         title.addEventListener("click", () => {
@@ -1333,22 +1334,22 @@ export class TaskModal extends Modal {
           attr: { "aria-label": tr("task.subtasks.remove") },
         });
         setIcon(rm, "x");
-        rm.addEventListener("click", async (e) => {
+        rm.addEventListener("click", fireAndForget(async (e) => {
           e.stopPropagation();
           try {
-            await this.plugin.index.updateTask(sub.data.id, (d) => {
+            await this.plugin.index.updateTask(sub.data.id, (d: TaskData) => {
               const next = parentTaskIds(d).filter((x) => x !== t.data.id);
               return {
                 data: { ...d, parent_task: normalizeParentTask(next), activity: appendActivity(d.activity, { kind: "parent_removed", id: t.data.id }) },
               };
             });
-            await this.plugin.index.updateTask(t.data.id, (d) => ({
+            await this.plugin.index.updateTask(t.data.id, (d: TaskData) => ({
               data: { ...d, activity: appendActivity(d.activity, { kind: "subtask_removed", id: sub.data.id }) },
             }));
-          } catch (err: any) {
-            new Notice(tr("task.notice.failed", { msg: err.message }));
+          } catch (err) {
+            new Notice(tr("task.notice.failed", { msg: (err as Error).message }));
           }
-        });
+        }));
       }
     }
     } // end modal_subtasks gate
@@ -1451,15 +1452,15 @@ export class TaskModal extends Modal {
       ta.placeholder = tr("task.description.placeholder");
       const actions = sec.createDiv({ cls: "it-desc-actions" });
       const save = actions.createEl("button", { cls: "it-btn-primary", text: tr("common.save") });
-      save.addEventListener("click", async () => {
+      save.addEventListener("click", fireAndForget(async () => {
         const newBody = ta.value;
         this.descriptionEditing = false;
         try {
-          await this.patch(() => ({ data: {}, body: newBody }));
-        } catch (e: any) {
-          new Notice(tr("task.notice.failed", { msg: e.message }));
+          await this.patch(() => ({ data: {} as TaskData, body: newBody }));
+        } catch (e) {
+          new Notice(tr("task.notice.failed", { msg: (e as Error).message }));
         }
-      });
+      }));
       toggleBtn.addEventListener("click", () => {
         this.descriptionEditing = false;
         this.render();
@@ -1510,16 +1511,16 @@ export class TaskModal extends Modal {
         const upBtn = actions.createEl("button", { cls: "it-icon-btn it-icon-btn-mini", attr: { "aria-label": tr("task.comments.moveUp") } });
         setIcon(upBtn, "chevron-up");
         upBtn.disabled = i === 0 || isEditing;
-        upBtn.addEventListener("click", async () => {
-          try { await moveComment(idx, taskId, cm.id, "up"); } catch (e: any) { new Notice(tr("task.notice.failed", { msg: e.message })); }
-        });
+        upBtn.addEventListener("click", fireAndForget(async () => {
+          try { await moveComment(idx, taskId, cm.id, "up"); } catch (e) { new Notice(tr("task.notice.failed", { msg: (e as Error).message })); }
+        }));
 
         const downBtn = actions.createEl("button", { cls: "it-icon-btn it-icon-btn-mini", attr: { "aria-label": tr("task.comments.moveDown") } });
         setIcon(downBtn, "chevron-down");
         downBtn.disabled = i === comments.length - 1 || isEditing;
-        downBtn.addEventListener("click", async () => {
-          try { await moveComment(idx, taskId, cm.id, "down"); } catch (e: any) { new Notice(tr("task.notice.failed", { msg: e.message })); }
-        });
+        downBtn.addEventListener("click", fireAndForget(async () => {
+          try { await moveComment(idx, taskId, cm.id, "down"); } catch (e) { new Notice(tr("task.notice.failed", { msg: (e as Error).message })); }
+        }));
 
         const editBtn = actions.createEl("button", { cls: "it-icon-btn it-icon-btn-mini", attr: { "aria-label": isEditing ? tr("task.comments.cancelEdit") : tr("task.comments.edit") } });
         setIcon(editBtn, isEditing ? "x" : "pencil");
@@ -1536,9 +1537,9 @@ export class TaskModal extends Modal {
             title: tr("task.comments.deleteTitle"),
             message: tr("task.comments.deleteMsg"),
             destructive: true,
-            onConfirm: async () => {
-              try { await removeComment(idx, taskId, cm.id); } catch (e: any) { new Notice(tr("task.notice.failed", { msg: e.message })); }
-            },
+            onConfirm: fireAndForget(async () => {
+              try { await removeComment(idx, taskId, cm.id); } catch (e) { new Notice(tr("task.notice.failed", { msg: (e as Error).message })); }
+            }),
           }).open();
         });
 
@@ -1554,9 +1555,9 @@ export class TaskModal extends Modal {
             const newText = ta.value.trim();
             if (!newText) return;
             this.editingCommentId = null;
-            try { await editComment(idx, taskId, cm.id, newText); } catch (e: any) { new Notice(tr("task.notice.failed", { msg: e.message })); }
+            try { await editComment(idx, taskId, cm.id, newText); } catch (e) { new Notice(tr("task.notice.failed", { msg: (e as Error).message })); }
           };
-          saveBtn.addEventListener("click", doSave);
+          saveBtn.addEventListener("click", fireAndForget(doSave));
           cancelBtn.addEventListener("click", () => {
             this.editingCommentId = null;
             this.render();
@@ -1584,11 +1585,11 @@ export class TaskModal extends Modal {
       if (!text) return;
       try {
         await addComment(idx, taskId, text);
-      } catch (e: any) {
-        new Notice(tr("task.notice.failed", { msg: e.message }));
+      } catch (e) {
+        new Notice(tr("task.notice.failed", { msg: (e as Error).message }));
       }
     };
-    submit.addEventListener("click", doSubmit);
+    submit.addEventListener("click", fireAndForget(doSubmit));
     addArea.addEventListener("keydown", (ev) => {
       if ((ev.metaKey || ev.ctrlKey) && ev.key === "Enter") { ev.preventDefault(); void doSubmit(); }
     });
@@ -1617,8 +1618,8 @@ export class TaskModal extends Modal {
         await this.patch((d) => ({
           data: { ...d, checklist: next.length ? next : undefined, activity: appendActivity(d.activity, entry) },
         }));
-      } catch (e: any) {
-        new Notice(tr("task.notice.failed", { msg: e.message }));
+      } catch (e) {
+        new Notice(tr("task.notice.failed", { msg: (e as Error).message }));
       }
     };
 
@@ -1708,14 +1709,14 @@ export class TaskModal extends Modal {
       if (ev.relatedTarget instanceof Node && target.contains(ev.relatedTarget)) return;
       target.removeClass("is-file-dragover");
     });
-    target.addEventListener("drop", async (ev) => {
+    target.addEventListener("drop", fireAndForget(async (ev) => {
       target.removeClass("is-file-dragover");
       if (!hasFiles(ev) || !ev.dataTransfer?.files.length) return;
       ev.preventDefault();
       ev.stopPropagation();
       try { await onFiles(ev.dataTransfer.files); }
-      catch (e: any) { new Notice(tr("task.notice.failed", { msg: e.message })); }
-    });
+      catch (e) { new Notice(tr("task.notice.failed", { msg: (e as Error).message })); }
+    }));
   }
 
   private beginAttachmentRename(
@@ -1746,8 +1747,8 @@ export class TaskModal extends Modal {
       if (!next || next === currentName) { cancel(); return; }
       finished = true;
       try { await onRename(next); }
-      catch (e: any) {
-        new Notice(tr("task.notice.failed", { msg: e.message }));
+      catch (e) {
+        new Notice(tr("task.notice.failed", { msg: (e as Error).message }));
         input.remove();
         link.show();
       }
@@ -1808,10 +1809,10 @@ export class TaskModal extends Modal {
             title: tr("task.attachments.removeTitle"),
             message: tr("task.attachments.removeMsg", { name: a.name }),
             destructive: true,
-            onConfirm: async () => {
+            onConfirm: fireAndForget(async () => {
               try { await removeMainAttachment(this.plugin.index, t.data.id, a.path); }
-              catch (e: any) { new Notice(tr("task.notice.failed", { msg: e.message })); }
-            },
+              catch (e) { new Notice(tr("task.notice.failed", { msg: (e as Error).message })); }
+            }),
           }).open();
         });
       }
@@ -1822,12 +1823,12 @@ export class TaskModal extends Modal {
     fileInput.hide();
     addBtn.addEventListener("click", () => fileInput.click());
     this.bindAttachmentDrop(sec, (files) => addMainAttachments(this.plugin.index, t.data.id, files));
-    fileInput.addEventListener("change", async () => {
+    fileInput.addEventListener("change", fireAndForget(async () => {
       if (!fileInput.files || fileInput.files.length === 0) return;
       try { await addMainAttachments(this.plugin.index, t.data.id, fileInput.files); }
-      catch (e: any) { new Notice(tr("task.notice.failed", { msg: e.message })); }
+      catch (e) { new Notice(tr("task.notice.failed", { msg: (e as Error).message })); }
       fileInput.value = "";
-    });
+    }));
   }
 
   // A field label with its colored field-type icon (built-in fields), so the
@@ -1863,10 +1864,10 @@ export class TaskModal extends Modal {
     head.createDiv({ cls: "it-section-title", text: tr("task.recurring.title") });
     const toggle = head.createEl("input", { type: "checkbox" });
     toggle.checked = enabled;
-    toggle.addEventListener("change", async () => {
+    toggle.addEventListener("change", fireAndForget(async () => {
       try {
         await this.patch((d) => {
-          const cur = (d.recurring as RecurringConfig | undefined) ?? { enabled: false, pattern: "weekly" as const, every: 1 };
+          const cur = d.recurring ?? { enabled: false, pattern: "weekly" as const, every: 1 };
           const next: RecurringConfig = { ...cur, enabled: toggle.checked };
           return {
             data: {
@@ -1876,15 +1877,15 @@ export class TaskModal extends Modal {
             },
           };
         });
-      } catch (e: any) { new Notice(tr("task.notice.failed", { msg: e.message })); }
-    });
+      } catch (e) { new Notice(tr("task.notice.failed", { msg: (e as Error).message })); }
+    }));
 
     if (!enabled) {
       sec.createDiv({ cls: "it-empty-row", text: tr("task.recurring.offHint") });
       return;
     }
 
-    const cfg: RecurringConfig = r as RecurringConfig;
+    const cfg: RecurringConfig = r;
     const body = sec.createDiv({ cls: "it-recurring-body" });
 
     // ----- Pattern + interval -----
@@ -1902,12 +1903,12 @@ export class TaskModal extends Modal {
       const every = Math.max(1, parseInt(everyInput.value, 10) || 1);
       const pattern = patternSel.value as RecurringConfig["pattern"];
       await this.patch((d) => {
-        const cur = (d.recurring as RecurringConfig | undefined) ?? { enabled: true, pattern: "weekly" as const };
+        const cur = d.recurring ?? { enabled: true, pattern: "weekly" as const };
         return { data: { ...d, recurring: { ...cur, pattern, every } } };
       });
     };
-    everyInput.addEventListener("change", writePattern);
-    patternSel.addEventListener("change", writePattern);
+    everyInput.addEventListener("change", fireAndForget(writePattern));
+    patternSel.addEventListener("change", fireAndForget(writePattern));
 
     // ----- Weekly: days of week -----
     if (cfg.pattern === "weekly") {
@@ -1918,13 +1919,13 @@ export class TaskModal extends Modal {
       for (let di = 0; di < dowIds.length; di++) {
         const d = dowIds[di];
         const chip = daysRow.createEl("button", { cls: "it-chip it-chip-tag" + (days.includes(d) ? " is-active" : ""), text: weekdayMin(di) });
-        chip.addEventListener("click", async () => {
+        chip.addEventListener("click", fireAndForget(async () => {
           const next = days.includes(d) ? days.filter((x) => x !== d) : [...days, d];
           await this.patch((dd) => {
-            const cur = (dd.recurring as RecurringConfig | undefined) ?? { enabled: true, pattern: "weekly" as const };
+            const cur = dd.recurring ?? { enabled: true, pattern: "weekly" as const };
             return { data: { ...dd, recurring: { ...cur, on: next } } };
           });
-        });
+        }));
       }
     }
 
@@ -1944,14 +1945,14 @@ export class TaskModal extends Modal {
       domInput.placeholder = Number.isFinite(anchorDay) && anchorDay >= 1 && anchorDay <= 31
         ? String(anchorDay)
         : tr("task.recurring.dayOfMonthPlaceholder");
-      domInput.addEventListener("change", async () => {
+      domInput.addEventListener("change", fireAndForget(async () => {
         const n = parseInt(domInput.value, 10);
         const dom = Number.isFinite(n) ? Math.max(1, Math.min(31, n)) : undefined;
         await this.patch((d) => {
-          const cur = (d.recurring as RecurringConfig | undefined) ?? { enabled: true, pattern: cfg.pattern };
+          const cur = d.recurring ?? { enabled: true, pattern: cfg.pattern };
           return { data: { ...d, recurring: { ...cur, day_of_month: dom } } };
         });
-      });
+      }));
     }
 
     // ----- End condition -----
@@ -1980,13 +1981,13 @@ export class TaskModal extends Modal {
       else if (type === "date") end = { type, date: endDateInput.value || undefined };
       else end = { type, count: parseInt(endCountInput.value, 10) || undefined };
       await this.patch((d) => {
-        const cur = (d.recurring as RecurringConfig | undefined) ?? { enabled: true, pattern: "weekly" as const };
+        const cur = d.recurring ?? { enabled: true, pattern: "weekly" as const };
         return { data: { ...d, recurring: { ...cur, end } } };
       });
     };
-    endSel.addEventListener("change", writeEnd);
-    endDateInput.addEventListener("change", writeEnd);
-    endCountInput.addEventListener("change", writeEnd);
+    endSel.addEventListener("change", fireAndForget(writeEnd));
+    endDateInput.addEventListener("change", fireAndForget(writeEnd));
+    endCountInput.addEventListener("change", fireAndForget(writeEnd));
 
     // ----- Status info -----
     if ((cfg.occurrences_passed ?? 0) > 0) {
@@ -2105,7 +2106,7 @@ export class TaskModal extends Modal {
         ? tr("task.confirm.rescheduleMsg", { items: itemsList })
         : tr("task.confirm.closeWithOpenMsg", { items: itemsList }),
       confirmLabel: shouldReschedule ? tr("task.confirm.reschedule") : tr("task.confirm.closeAnyway"),
-      onConfirm: writeStatus,
+      onConfirm: fireAndForget(writeStatus),
     }).open();
   }
 
@@ -2133,8 +2134,8 @@ export class TaskModal extends Modal {
         if (key === "blocks") await addBlock(idx, currentId, partnerId);
         else if (key === "waiting_on") await addWaitingOn(idx, currentId, partnerId);
         else await addRelated(idx, currentId, partnerId);
-      } catch (e: any) {
-        new Notice(tr("task.notice.failed", { msg: e.message }));
+      } catch (e) {
+        new Notice(tr("task.notice.failed", { msg: (e as Error).message }));
       }
     };
     const removeOne = async (partnerId: string) => {
@@ -2142,8 +2143,8 @@ export class TaskModal extends Modal {
         if (key === "blocks") await removeBlock(idx, currentId, partnerId);
         else if (key === "waiting_on") await removeWaitingOn(idx, currentId, partnerId);
         else await removeRelated(idx, currentId, partnerId);
-      } catch (e: any) {
-        new Notice(tr("task.notice.failed", { msg: e.message }));
+      } catch (e) {
+        new Notice(tr("task.notice.failed", { msg: (e as Error).message }));
       }
     };
 
@@ -2160,9 +2161,9 @@ export class TaskModal extends Modal {
         source: { id: t.data.id, title: t.data.title || tr("task.untitled"), icon: t.data.icon, color: t.data.color },
         contextLabel: tr("task.relationships.linkContext", { label, inverse: inverseLabel }),
         confirmLabel: tr("task.picker.link"),
-        onPick: async (picked) => {
+        onPick: fireAndForget(async (picked) => {
           for (const pid of picked) await addOne(pid);
-        },
+        }),
       }).open();
     });
 
@@ -2187,7 +2188,7 @@ export class TaskModal extends Modal {
           message: label,
           destructive: true,
           confirmLabel: tr("common.remove"),
-          onConfirm: () => removeOne(id),
+          onConfirm: () => void removeOne(id),
         }).open();
       });
     }
@@ -2212,14 +2213,14 @@ export class TaskModal extends Modal {
         source: { title: t.data.title || tr("task.untitled"), icon: t.data.icon, color: t.data.color },
         contextLabel: tr("task.documents.pickerContext"),
         confirmLabel: tr("task.picker.link"),
-        onPick: async (picked) => {
-          await this.plugin.index.updateTask(t.data.id, (d) => {
+        onPick: fireAndForget(async (picked) => {
+          await this.plugin.index.updateTask(t.data.id, (d: TaskData) => {
             const cur = Array.isArray(d.documents) ? d.documents : [];
             const next = [...cur];
             for (const id of picked) if (!next.includes(id)) next.push(id);
             return { data: { ...d, documents: next } };
           });
-        },
+        }),
       }).open();
     });
     const list = sec.createDiv({ cls: "it-subtasks-list" });
@@ -2236,14 +2237,14 @@ export class TaskModal extends Modal {
       if (doc) title.addEventListener("click", () => this.openLinkedDoc(doc));
       const rm = row.createEl("button", { cls: "it-icon-btn it-icon-btn-mini it-subtask-remove", attr: { "aria-label": tr("task.documents.remove") } });
       setIcon(rm, "x");
-      rm.addEventListener("click", async (e) => {
+      rm.addEventListener("click", fireAndForget(async (e) => {
         e.stopPropagation();
-        await this.plugin.index.updateTask(t.data.id, (d) => {
+        await this.plugin.index.updateTask(t.data.id, (d: TaskData) => {
           const cur: string[] = Array.isArray(d.documents) ? d.documents : [];
           const next = cur.filter((x) => x !== id);
           return { data: { ...d, documents: next.length ? next : undefined } };
         });
-      });
+      }));
     }
   }
 
@@ -2257,8 +2258,8 @@ export class TaskModal extends Modal {
     else void this.plugin.activateView().then(() => this.plugin.getMainView()?.openDocLocation(doc.__path!, undefined, taskId));
   }
 
-  private renderCustomField(parent: HTMLElement, f: any, value: any) {
-    const setValue = async (v: any) => {
+  private renderCustomField(parent: HTMLElement, f: CustomFieldDef, value: unknown) {
+    const setValue = async (v: unknown) => {
       const isEmpty = isEmptyCustomFieldValue(v);
       if (f.required && isEmpty) {
         new Notice(tr("task.notice.requiredField", { name: f.name }));
@@ -2275,8 +2276,8 @@ export class TaskModal extends Modal {
             stored = await this.plugin.encryptSecretFieldValue(String(v));
             if (!stored) return;
             this.secretPlaintext.set(f.id, String(v));
-          } catch (e: any) {
-            new Notice(tr("task.notice.failed", { msg: e?.message || String(e) }));
+          } catch (e) {
+            new Notice(tr("task.notice.failed", { msg: (e as Error | undefined)?.message || String(e) }));
             return;
           }
         }
@@ -2291,19 +2292,19 @@ export class TaskModal extends Modal {
     switch (f.type) {
       case "text": {
         const i = parent.createEl("input", { type: "text", cls: "it-input" });
-        i.value = value ?? "";
-        i.addEventListener("change", () => setValue(i.value));
+        i.value = (value as string | undefined) ?? "";
+        i.addEventListener("change", () => void setValue(i.value));
         break;
       }
       case "textarea": {
         const ta = parent.createEl("textarea", { cls: "it-input" });
-        ta.value = value ?? "";
+        ta.value = (value as string | undefined) ?? "";
         ta.rows = 3;
-        ta.addEventListener("change", () => setValue(ta.value));
+        ta.addEventListener("change", () => void setValue(ta.value));
         break;
       }
       case "markdown": {
-        this.renderMarkdownCustomField(parent, f, String(value ?? ""), setValue, false);
+        this.renderMarkdownCustomField(parent, f, String((value as string | undefined) ?? ""), setValue, false);
         break;
       }
       case "secret_text":
@@ -2318,10 +2319,10 @@ export class TaskModal extends Modal {
         // Linked types are edited in a dedicated modal (label + value). The
         // task-modal row only displays the rendered link plus edit/× actions.
         const cur: LinkedValue | null = (value && typeof value === "object" && "value" in value)
-          ? { label: value.label, value: value.value }
+          ? { label: (value as LinkedValue).label, value: (value as LinkedValue).value }
           : (typeof value === "string" && value ? { value } : null);
         const wrap = parent.createDiv({ cls: "it-cf-linked-display" });
-        const kind = f.type as "url" | "email" | "phone";
+        const kind = f.type;
         if (cur) {
           // Reuse the shared cf-render output so the display matches what
           // the list/board/calendar/table views show — single source.
@@ -2334,7 +2335,7 @@ export class TaskModal extends Modal {
           edit.addEventListener("click", () => {
             new LinkedValueModal(this.app, {
               kind, fieldName: f.name, current: cur,
-              onSave: (next) => setValue(next),
+              onSave: (next) => void setValue(next),
             }).open();
           });
           const rm = wrap.createEl("button", {
@@ -2348,7 +2349,7 @@ export class TaskModal extends Modal {
               message: f.name,
               destructive: true,
               confirmLabel: tr("common.remove"),
-              onConfirm: () => setValue(null),
+              onConfirm: () => void setValue(null),
             }).open();
           });
         } else {
@@ -2356,7 +2357,7 @@ export class TaskModal extends Modal {
           add.addEventListener("click", () => {
             new LinkedValueModal(this.app, {
               kind, fieldName: f.name,
-              onSave: (next) => setValue(next),
+              onSave: (next) => void setValue(next),
             }).open();
           });
         }
@@ -2371,10 +2372,11 @@ export class TaskModal extends Modal {
             return value as import("../types").LocationValue;
           }
           // Legacy LinkedValue fallback
-          if (typeof value === "object" && typeof value.value === "string") {
-            const v: string = value.value;
-            if (/^[a-z][a-z0-9+.-]*:\/\//i.test(v)) return { label: value.label, url: v };
-            return { label: value.label || v };
+          if (typeof value === "object" && typeof (value as LinkedValue).value === "string") {
+            const legacy = value as LinkedValue;
+            const v: string = legacy.value;
+            if (/^[a-z][a-z0-9+.-]*:\/\//i.test(v)) return { label: legacy.label, url: v };
+            return { label: legacy.label || v };
           }
           if (typeof value === "string" && value) return { label: value };
           return undefined;
@@ -2390,7 +2392,7 @@ export class TaskModal extends Modal {
           edit.addEventListener("click", () => {
             new LocationModal(this.app, {
               fieldName: f.name, current: curLoc,
-              onSave: (next) => setValue(next),
+              onSave: (next) => void setValue(next),
             }).open();
           });
           const rm = wrapLoc.createEl("button", {
@@ -2404,7 +2406,7 @@ export class TaskModal extends Modal {
               message: f.name,
               destructive: true,
               confirmLabel: tr("common.remove"),
-              onConfirm: () => setValue(null),
+              onConfirm: () => void setValue(null),
             }).open();
           });
         } else {
@@ -2412,7 +2414,7 @@ export class TaskModal extends Modal {
           add.addEventListener("click", () => {
             new LocationModal(this.app, {
               fieldName: f.name,
-              onSave: (next) => setValue(next),
+              onSave: (next) => void setValue(next),
             }).open();
           });
         }
@@ -2420,7 +2422,7 @@ export class TaskModal extends Modal {
       }
       case "number": {
         const i = parent.createEl("input", { type: "number", cls: "it-input" });
-        i.value = value ?? "";
+        i.value = (value as string | undefined) ?? "";
         i.addEventListener("change", () => {
           const n = parseFloat(i.value);
           void setValue(isNaN(n) ? null : n);
@@ -2430,7 +2432,7 @@ export class TaskModal extends Modal {
       case "money": {
         const wrap = parent.createDiv({ cls: "it-cf-money-edit" });
         const i = wrap.createEl("input", { type: "number", cls: "it-input" });
-        i.value = value ?? "";
+        i.value = (value as string | undefined) ?? "";
         wrap.createSpan({ text: " " + (f.currency || "PLN"), cls: "it-input-suffix" });
         i.addEventListener("change", () => {
           const n = parseFloat(i.value);
@@ -2465,14 +2467,14 @@ export class TaskModal extends Modal {
       case "checkbox": {
         const i = parent.createEl("input", { type: "checkbox" });
         i.checked = !!value;
-        i.addEventListener("change", () => setValue(i.checked));
+        i.addEventListener("change", () => void setValue(i.checked));
         break;
       }
       case "dropdown": {
         // Render as a colored chip + popover dropdown so option colors are
         // visible (the native <select> ignores all styling). Empty state
         // shows a neutral "—" chip the user can click to pick a value.
-        const opts: any[] = (f.options || []) as any[];
+        const opts: CustomFieldOption[] = f.options || [];
         const cfStyles = this.plugin.index.resolveChipStyles({ listPath: this.task.listPath });
         const currentOpt = opts.find((o) => (o.value ?? o.label) === value);
         const chip = parent.createEl("button", { cls: "it-chip it-chip-tag", text: currentOpt?.label || tr("task.customFields.pickValue") });
@@ -2480,12 +2482,12 @@ export class TaskModal extends Modal {
         applyChipStyleByKind(chip, "custom_field", cfStyles);
         chip.addEventListener("click", (e) => {
           showPopover(e.currentTarget as HTMLElement, (root) => {
-            buildDropdown({
+            buildDropdown<string | null>({
               parent: root,
-              current: value,
+              current: value as string | null | undefined,
               items: [
                 ...opts.map((o) => ({ value: o.value ?? o.label, label: o.label, color: o.color })),
-                { value: null as any, label: tr("task.customFields.noneOption"), color: "#9E9E9E" },
+                { value: null, label: tr("task.customFields.noneOption"), color: "#9E9E9E" },
               ],
               onSelect: (v) => {
                 void setValue(v ?? null);
@@ -2497,7 +2499,7 @@ export class TaskModal extends Modal {
         break;
       }
       case "labels": {
-        const cur: string[] = Array.isArray(value) ? value : (value ? [value] : []);
+        const cur: string[] = Array.isArray(value) ? (value as string[]) : (value ? [value as string] : []);
         const wrap = parent.createDiv({ cls: "it-labels-multi" });
         const cfStyles = this.plugin.index.resolveChipStyles({ listPath: this.task.listPath });
         for (const opt of f.options || []) {
@@ -2520,9 +2522,9 @@ export class TaskModal extends Modal {
         const max = f.scale || 5;
         const stars = parent.createDiv({ cls: "it-rating" });
         for (let i = 1; i <= max; i++) {
-          const s = stars.createEl("button", { cls: "it-rating-star", text: i <= (value || 0) ? (f.icon || "★") : (f.icon ? "" : "☆") });
-          if (f.icon) s.setText(i <= (value || 0) ? f.icon : "·");
-          s.addEventListener("click", () => setValue(i === value ? null : i));
+          const s = stars.createEl("button", { cls: "it-rating-star", text: i <= ((value as number | undefined) || 0) ? (f.icon || "★") : (f.icon ? "" : "☆") });
+          if (f.icon) s.setText(i <= ((value as number | undefined) || 0) ? f.icon : "·");
+          s.addEventListener("click", () => void setValue(i === value ? null : i));
         }
         break;
       }
@@ -2538,7 +2540,7 @@ export class TaskModal extends Modal {
           bar.style.width = `${n}%`;
           lbl.setText(`${n}%`);
         });
-        inp.addEventListener("change", () => setValue(parseInt(inp.value, 10)));
+        inp.addEventListener("change", () => void setValue(parseInt(inp.value, 10)));
         break;
       }
       case "progress_auto": {
@@ -2553,7 +2555,7 @@ export class TaskModal extends Modal {
         break;
       }
       case "relationship": {
-        const ids: string[] = Array.isArray(value) ? value.filter((x) => typeof x === "string") : [];
+        const ids: string[] = Array.isArray(value) ? (value as unknown[]).filter((x): x is string => typeof x === "string") : [];
         const wrap = parent.createDiv({ cls: "it-rel-group it-cf-tasks" });
         const items = wrap.createDiv({ cls: "it-rel-items" });
         if (ids.length === 0) items.createSpan({ cls: "it-empty-inline", text: tr("task.relationships.none") });
@@ -2589,13 +2591,13 @@ export class TaskModal extends Modal {
             },
             contextLabel: tr("task.customFields.fieldContext", { name: f.name || f.id }),
             confirmLabel: tr("task.picker.link"),
-            onPick: (picked) => setValue([...ids, ...picked]),
+            onPick: (picked) => void setValue([...ids, ...picked]),
           }).open();
         });
         break;
       }
       case "doc_relationship": {
-        const ids: string[] = Array.isArray(value) ? value.filter((x) => typeof x === "string") : [];
+        const ids: string[] = Array.isArray(value) ? (value as unknown[]).filter((x): x is string => typeof x === "string") : [];
         const wrap = parent.createDiv({ cls: "it-rel-group it-cf-tasks" });
         const items = wrap.createDiv({ cls: "it-rel-items" });
         if (ids.length === 0) items.createSpan({ cls: "it-empty-inline", text: tr("task.relationships.none") });
@@ -2621,7 +2623,7 @@ export class TaskModal extends Modal {
             source: { title: this.task.data.title || tr("task.untitled"), icon: this.task.data.icon, color: this.task.data.color },
             contextLabel: tr("task.customFields.fieldContext", { name: f.name || f.id }),
             confirmLabel: tr("task.picker.link"),
-            onPick: (picked) => setValue([...ids, ...picked]),
+            onPick: (picked) => void setValue([...ids, ...picked]),
           }).open();
         });
         break;
@@ -2629,7 +2631,7 @@ export class TaskModal extends Modal {
       case "attachment": {
         // Multi-file attachment field. Storage goes under
         // _attachments/<task_id>/cf-<field_id>/ via the attachments module.
-        const list: TaskAttachment[] = Array.isArray(value) ? value : [];
+        const list: TaskAttachment[] = Array.isArray(value) ? (value as TaskAttachment[]) : [];
         const wrap = parent.createDiv({ cls: "it-cf-attachment-edit" });
         if (list.length === 0) wrap.createSpan({ cls: "it-empty-inline", text: tr("task.customFields.noFiles") });
         for (const a of list) {
@@ -2659,19 +2661,19 @@ export class TaskModal extends Modal {
             attr: { "aria-label": tr("common.remove") },
           });
           setIcon(rm, "x");
-          rm.addEventListener("click", async () => {
+          rm.addEventListener("click", fireAndForget(async () => {
             if (f.required && list.length <= 1) { new Notice(tr("task.notice.requiredField", { name: f.name })); return; }
             new ConfirmModal(this.app, {
               title: tr("task.attachments.removeTitle"),
               message: tr("task.attachments.removeMsg", { name: a.name }),
               destructive: true,
               confirmLabel: tr("common.remove"),
-              onConfirm: async () => {
+              onConfirm: fireAndForget(async () => {
                 try { await removeCfAttachment(this.plugin.index, this.task.data.id, f.id, a.path); }
-                catch (e: any) { new Notice(tr("task.notice.failed", { msg: e.message })); }
-              },
+                catch (e) { new Notice(tr("task.notice.failed", { msg: (e as Error).message })); }
+              }),
             }).open();
-          });
+          }));
         }
         const addRow = wrap.createDiv({ cls: "it-attachment-add" });
         const fileInput = addRow.createEl("input", { type: "file", attr: { multiple: "true" } });
@@ -2679,19 +2681,20 @@ export class TaskModal extends Modal {
         const addBtn = addRow.createEl("button", { cls: "it-btn-ghost", text: tr("task.attachments.add") });
         addBtn.addEventListener("click", () => fileInput.click());
         this.bindAttachmentDrop(wrap, (files) => addCfAttachments(this.plugin.index, this.task.data.id, f.id, files));
-        fileInput.addEventListener("change", async () => {
+        fileInput.addEventListener("change", fireAndForget(async () => {
           if (!fileInput.files || fileInput.files.length === 0) return;
           try { await addCfAttachments(this.plugin.index, this.task.data.id, f.id, fileInput.files); }
-          catch (e: any) { new Notice(tr("task.notice.failed", { msg: e.message })); }
+          catch (e) { new Notice(tr("task.notice.failed", { msg: (e as Error).message })); }
           fileInput.value = "";
-        });
+        }));
         break;
       }
       default: {
         const i = parent.createEl("input", { type: "text", cls: "it-input" });
-        i.value = value != null ? (typeof value === "object" ? JSON.stringify(value) : String(value)) : "";
-        i.placeholder = `(${f.type})`;
-        i.addEventListener("change", () => setValue(i.value));
+        const raw = value as string | number | boolean | object | null | undefined;
+        i.value = raw != null ? (typeof raw === "object" ? JSON.stringify(raw) : String(raw)) : "";
+        i.placeholder = `(${f.type as string})`;
+        i.addEventListener("change", () => void setValue(i.value));
       }
     }
   }
@@ -2716,10 +2719,10 @@ export class TaskModal extends Modal {
       ta.rows = 12;
       ta.placeholder = tr("task.description.placeholder");
       const save = actions.createEl("button", { cls: "it-btn-primary", text: tr("common.save") });
-      save.addEventListener("click", async () => {
+      save.addEventListener("click", fireAndForget(async () => {
         this.editingMarkdownFieldIds.delete(field.id);
         await onSave(ta.value);
-      });
+      }));
       edit.addEventListener("click", () => {
         this.editingMarkdownFieldIds.delete(field.id);
         this.render();
@@ -2753,7 +2756,7 @@ export class TaskModal extends Modal {
         attr: { type: "button", "aria-label": tr("secret.reveal"), title: tr("secret.reveal") },
       });
       setIcon(reveal, "eye");
-      reveal.addEventListener("click", async () => {
+      reveal.addEventListener("click", fireAndForget(async () => {
         const values = await this.plugin.decryptSecretFieldValuesForModal([encryptedValue]);
         if (values === null) return;
         if (values[0] === null) {
@@ -2763,7 +2766,7 @@ export class TaskModal extends Modal {
         this.secretPlaintext.set(field.id, values[0]);
         this.secretVisibility.revealOne(field.id);
         this.render();
-      });
+      }));
       return;
     }
 

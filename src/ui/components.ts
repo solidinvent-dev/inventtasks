@@ -1,5 +1,5 @@
 import { Platform } from "obsidian";
-import { TaskFile, StatusDef, PriorityDef, TagDef, ChipKind, ResolvedChipStyle, ResolvedChipStyles } from "../types";
+import { TaskFile, StatusDef, PriorityDef, TagDef, ChipKind, ResolvedChipStyle, ResolvedChipStyles, ListNode, FolderNode, SpaceNode } from "../types";
 import { appendSvg, flagSvg, renderIconish } from "./icons";
 import { isOverdue, formatDate } from "../utils/dates";
 import { t } from "../i18n";
@@ -28,7 +28,7 @@ export function mobileBottomInset(doc: Document = document): number {
 export function renderListReference(
   parent: HTMLElement,
   task: { listPath?: string },
-  index: { findList: (p: string) => any; findFolder: (p: string) => any; findSpace: (p: string) => any },
+  index: { findList: (p: string) => ListNode | undefined; findFolder: (p: string) => FolderNode | undefined; findSpace: (p: string) => SpaceNode | undefined },
   kind: "list" | "folder" | "space",
 ): HTMLElement | null {
   if (!task.listPath) return null;
@@ -250,7 +250,7 @@ export function buildDropdown<T>(opts: {
       // Capture the owner while the click target is still attached. Callers
       // often await a write before dismissing the menu; Event.currentTarget is
       // already null by then in Chromium and must not be used for that cleanup.
-      const popover = row.closest(".it-popover") as HTMLElement | null;
+      const popover = row.closest<HTMLElement>(".it-popover");
       opts.onSelect(item.value, popover);
     });
   }

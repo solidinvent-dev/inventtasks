@@ -7,7 +7,8 @@
 // grid cell, freezing, etc.) and call into here for the value extraction,
 // computation, formatting, the config popover, and a small cell-filler helper.
 
-import { ContextLocation, ColumnCalc, CalcType, CustomFieldDef, TaskFile, ViewType } from "../types";
+import { ContextLocation, ColumnCalc, CalcType, CustomFieldDef, PriorityDef, ResolvedChipStyles, StatusDef, TaskFile, ViewType } from "../types";
+import type { GroupContext } from "../data/filters";
 import { formatDuration } from "../utils/dates";
 import { showPopover } from "../ui/components";
 import { locationKey } from "../view-state";
@@ -20,15 +21,29 @@ type FieldKind = "number" | "date" | "bool" | "text";
 interface CellVal { num: number | null; bool: boolean | null; str: string; empty: boolean; }
 const EMPTY_CELL: CellVal = { num: null, bool: null, str: "", empty: true };
 
-function customFieldOf(field: string, context: any): CustomFieldDef | undefined {
+// The render context main-view builds for the List and Table views. Declared
+// here because both views also hand it to the column calculations, which only
+// read the GroupContext part (custom fields, statuses, priorities, stats).
+export interface RowViewContext extends GroupContext {
+  statuses: StatusDef[];
+  priorities: PriorityDef[];
+  priorityLabels: Record<number, string>;
+  visibleFields: string[];
+  chipStyles?: ResolvedChipStyles;
+  relationshipCounts?: Map<string, number>;
+  showFieldIcons?: boolean;
+  subtaskMode?: "parents" | "nested" | "flat";
+}
+
+function customFieldOf(field: string, context: GroupContext): CustomFieldDef | undefined {
   if (!field.startsWith("custom_field:")) return undefined;
   const id = field.slice("custom_field:".length);
-  return (context.customFields as CustomFieldDef[] | undefined)?.find((c) => c.id === id);
+  return context.customFields?.find((c) => c.id === id);
 }
 
 // Classifies a column so we know which calculations make sense and how to
 // format numeric results.
-export function fieldKind(field: string, context: any): FieldKind {
+export function fieldKind(field: string, context: GroupContext): FieldKind {
   if (field === "time_estimate" || field === "time_tracked" || field === "sprint_points" || field === "priority") return "number";
   if (field === "due_date" || field === "start_date" || field === "created_at" || field === "updated_at") return "date";
   const cf = customFieldOf(field, context);
@@ -45,10 +60,10 @@ export function fieldKind(field: string, context: any): FieldKind {
 
 // Extracts a task's value for a column in the three shapes a calculation might
 // need: numeric, boolean, and text — plus whether it's "empty".
-export function cellValue(t: TaskFile, field: string, plugin: InventTasksPlugin, context: any): CellVal {
-  const d: any = t.data;
-  const num = (v: any): CellVal => (v == null || v === "" ? { ...EMPTY_CELL } : { num: Number(v), bool: null, str: String(v), empty: isNaN(Number(v)) });
-  const str = (v: any): CellVal => { const s = v ? String(v) : ""; return { num: null, bool: null, str: s, empty: s.trim() === "" }; };
+export function cellValue(t: TaskFile, field: string, plugin: InventTasksPlugin, context: GroupContext): CellVal {
+  const d = t.data;
+  const num = (v: number | string | null | undefined): CellVal => (v == null || v === "" ? { ...EMPTY_CELL } : { num: Number(v), bool: null, str: String(v), empty: isNaN(Number(v)) });
+  const str = (v: string | null | undefined): CellVal => { const s = v ? String(v) : ""; return { num: null, bool: null, str: s, empty: s.trim() === "" }; };
 
   switch (field) {
     case "time_estimate": return num(d.time_estimate);
@@ -56,7 +71,7 @@ export function cellValue(t: TaskFile, field: string, plugin: InventTasksPlugin,
     case "sprint_points": return num(d.sprint_points);
     case "priority": {
       if (d.priority == null) return { ...EMPTY_CELL };
-      const lab = context.priorities?.find((p: any) => p.id === d.priority)?.label ?? String(d.priority);
+      const lab = context.priorities?.find((p) => p.id === d.priority)?.label ?? String(d.priority);
       return { num: Number(d.priority), bool: null, str: lab, empty: false };
     }
     case "due_date": case "start_date": case "created_at": case "updated_at": {
@@ -67,7 +82,7 @@ export function cellValue(t: TaskFile, field: string, plugin: InventTasksPlugin,
     case "id": return str(d.id);
     case "custom_id": return str(d.custom_id);
     case "type": return str(d.type || "task");
-    case "status": return str(context.statuses?.find((s: any) => s.id === d.status)?.name || d.status || "");
+    case "status": return str(context.statuses?.find((s) => s.id === d.status)?.name || d.status || "");
     case "tags": { const a = d.tags || []; return { num: null, bool: null, str: a.join(", "), empty: a.length === 0 }; }
     case "context": { const a = d.context || []; return { num: null, bool: null, str: a.join(", "), empty: a.length === 0 }; }
     case "list": case "folder": case "space": {
@@ -82,7 +97,7 @@ export function cellValue(t: TaskFile, field: string, plugin: InventTasksPlugin,
 
   const cf = customFieldOf(field, context);
   if (cf) {
-    const raw = effectiveCustomFieldValue(t, cf, {
+    const raw: unknown = effectiveCustomFieldValue(t, cf, {
       subtaskStats: context.subtaskStats,
       taskTitles: context.taskTitles,
     });
@@ -95,7 +110,8 @@ export function cellValue(t: TaskFile, field: string, plugin: InventTasksPlugin,
       return { num: n, bool: null, str: n == null ? "" : String(n), empty: n == null };
     }
     if (cf.type === "date" || cf.type === "datetime") {
-      return { num: raw ? (Date.parse(String(raw)) || null) : null, bool: null, str: raw ? String(raw).slice(0, 10) : "", empty: !raw };
+      const ds = raw as string | null | undefined;
+      return { num: ds ? (Date.parse(String(ds)) || null) : null, bool: null, str: ds ? String(ds).slice(0, 10) : "", empty: !ds };
     }
     const s = customFieldText(cf, raw, { taskTitles: context.taskTitles });
     return { num: null, bool: null, str: s, empty: s.trim() === "" };
@@ -124,14 +140,14 @@ const CALC_DEFS: CalcDef[] = [
   { type: "equals_count", kinds: ALL_KINDS, needs: "match" },
 ];
 
-export function calcDefsFor(field: string, context: any): CalcDef[] {
+export function calcDefsFor(field: string, context: GroupContext): CalcDef[] {
   const k = fieldKind(field, context);
   return CALC_DEFS.filter((d) => d.kinds.includes(k));
 }
 
 // ---------- Compute ----------
 
-function fmtNumber(v: number, field: string, plugin: InventTasksPlugin, context: any): string {
+function fmtNumber(v: number, field: string, plugin: InventTasksPlugin, context: GroupContext): string {
   if (field === "time_estimate" || field === "time_tracked") return formatDuration(Math.round(v)) || "0m";
   const cf = customFieldOf(field, context);
   if (cf?.type === "money") {
@@ -147,7 +163,7 @@ function fmtNumber(v: number, field: string, plugin: InventTasksPlugin, context:
 
 const FACTOR_TYPES = new Set<CalcType>(["sum", "avg", "min", "max", "range"]);
 
-export function computeCalc(calc: ColumnCalc, tasks: TaskFile[], field: string, plugin: InventTasksPlugin, context: any): string {
+export function computeCalc(calc: ColumnCalc, tasks: TaskFile[], field: string, plugin: InventTasksPlugin, context: GroupContext): string {
   const acc = (t: TaskFile) => cellValue(t, field, plugin, context);
   const kind = fieldKind(field, context);
   switch (calc.type) {
@@ -237,7 +253,7 @@ export function hasAnyCalc(calcs?: Record<string, ColumnCalc>): boolean {
 //  mode "group"  → per-group: value only (compact), read-only.
 export function fillCalcCell(
   el: HTMLElement, field: string, calc: ColumnCalc | undefined,
-  tasks: TaskFile[], plugin: InventTasksPlugin, context: any, mode: "footer" | "group",
+  tasks: TaskFile[], plugin: InventTasksPlugin, context: GroupContext, mode: "footer" | "group",
 ) {
   el.empty();
   if (!calc) { if (mode === "footer") el.addClass("is-empty"); return; }
@@ -266,7 +282,7 @@ export function openCalcMenu(opts: {
   fieldLabel: string;
   current?: ColumnCalc;
   plugin: InventTasksPlugin;
-  context: any;
+  context: GroupContext;
   onChange: (calc: ColumnCalc | null) => void;
 }) {
   const { anchor, field, fieldLabel, current, context } = opts;

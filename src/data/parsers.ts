@@ -1,5 +1,5 @@
 import { parseYaml, stringifyYaml } from "obsidian";
-import { TaskData, WorkspaceConfig, SpaceConfig, FolderConfig, ListConfig, ViewConfig, DocMeta, DocPage } from "../types";
+import { TaskData, WorkspaceConfig, SpaceConfig, FolderConfig, ListConfig, ViewConfig, DocMeta, DocPage, ConfigurableSet, CalendarSyncRule } from "../types";
 import { t } from "../i18n";
 import { isSecretFieldsConfig } from "./secret-fields";
 
@@ -10,16 +10,19 @@ const CALENDAR_SYNC_STATUS_POLICIES = new Set(["sync_all", "exclude_done_closed"
 
 // Google Calendar and Outlook targets were removed; rules saved before that
 // keep their CalDAV / ICS targets and silently lose the rest.
-export function withoutRemovedCalendarTargets(rules: any[]): any[] {
+export function withoutRemovedCalendarTargets(rules: CalendarSyncRule[]): CalendarSyncRule[] {
   return rules.map((rule) =>
     rule && Array.isArray(rule.targets)
-      ? { ...rule, targets: rule.targets.filter((tg: any) => tg?.kind === "caldav" || tg?.kind === "ics") }
+      ? { ...rule, targets: rule.targets.filter((tg) => tg?.kind === "caldav" || tg?.kind === "ics") }
       : rule
   );
 }
 
+/** Parsed YAML frontmatter: keys and values are whatever the file holds. */
+export type Frontmatter = Record<string, unknown>;
+
 export interface ParsedFile {
-  fm: any;
+  fm: Frontmatter;
   body: string;
   hadFrontmatter: boolean;
   yamlError?: string;
@@ -30,13 +33,13 @@ export function splitFrontmatter(raw: string): ParsedFile {
   if (!match) {
     return { fm: {}, body: raw, hadFrontmatter: false };
   }
-  let fm: any = {};
+  let fm: Frontmatter = {};
   let yamlError: string | undefined;
   try {
-    fm = normalizeYamlDates(parseYaml(match[1]) ?? {});
-  } catch (err: any) {
+    fm = normalizeYamlDates(parseYaml(match[1]) ?? {}) as Frontmatter;
+  } catch (err) {
     fm = {};
-    yamlError = err?.message || String(err);
+    yamlError = (err as Error | undefined)?.message || String(err);
   }
   const body = raw.slice(match[0].length);
   return { fm, body, hadFrontmatter: true, yamlError };
@@ -51,15 +54,17 @@ export function splitFrontmatter(raw: string): ParsedFile {
  * single frontmatter choke point, makes every caller immune to the parser's
  * dialect. Mutates in place (fresh parse output) and returns the value.
  */
-export function normalizeYamlDates(value: any): any {
+export function normalizeYamlDates(value: unknown): unknown {
   if (value instanceof Date) return yamlDateToString(value);
   if (Array.isArray(value)) {
-    for (let i = 0; i < value.length; i++) value[i] = normalizeYamlDates(value[i]);
-    return value;
+    const arr = value as unknown[];
+    for (let i = 0; i < arr.length; i++) arr[i] = normalizeYamlDates(arr[i]);
+    return arr;
   }
   if (value && typeof value === "object") {
-    for (const k of Object.keys(value)) value[k] = normalizeYamlDates(value[k]);
-    return value;
+    const obj = value as Record<string, unknown>;
+    for (const k of Object.keys(obj)) obj[k] = normalizeYamlDates(obj[k]);
+    return obj;
   }
   return value;
 }
@@ -73,30 +78,31 @@ function yamlDateToString(d: Date): string {
   return `${ymd} ${pad(d.getUTCHours())}:${pad(d.getUTCMinutes())}`;
 }
 
-export function joinFrontmatter(fm: any, body: string): string {
+export function joinFrontmatter(fm: object, body: string): string {
   const cleaned = pruneEmpty(fm);
   const yaml = stringifyYaml(cleaned).trimEnd();
   return `---\n${yaml}\n---\n\n${body.replace(/^\n+/, "")}`;
 }
 
-function pruneEmpty(obj: any): any {
+function pruneEmpty(obj: unknown): unknown {
   if (obj === null || obj === undefined) return undefined;
   if (Array.isArray(obj)) {
-    const arr = obj
+    const arr = (obj as unknown[])
       .map(pruneEmpty)
       .filter((v) => v !== undefined && v !== null && !(typeof v === "string" && v === ""));
     return arr.length ? arr : undefined;
   }
   if (typeof obj === "object") {
-    const out: any = {};
+    const src = obj as Record<string, unknown>;
+    const out: Record<string, unknown> = {};
     let kept = 0;
-    for (const k of Object.keys(obj)) {
-      if (k === "calendar_sync_rules" && Array.isArray(obj[k])) {
-        out[k] = obj[k];
+    for (const k of Object.keys(src)) {
+      if (k === "calendar_sync_rules" && Array.isArray(src[k])) {
+        out[k] = src[k];
         kept++;
         continue;
       }
-      const v = pruneEmpty(obj[k]);
+      const v = pruneEmpty(src[k]);
       if (v !== undefined) {
         out[k] = v;
         kept++;
@@ -156,8 +162,14 @@ const OWNED_TASK_KEYS = new Set([
  *  is unpacked again in `serializeTask` and never written under this name. */
 export const FOREIGN_FM_KEY = "__foreign_fm";
 
+/** Frontmatter read as the shape it is expected to have. A cast, not a check:
+ *  values reach the model exactly as the YAML holds them, as they always have. */
+type Loose<T> = Partial<T> & Frontmatter;
+
 export function parseTaskFile(raw: string): { data: TaskData; body: string } {
-  const { fm, body } = splitFrontmatter(raw);
+  const parsed = splitFrontmatter(raw);
+  const fm = parsed.fm as Loose<TaskData>;
+  const body = parsed.body;
   const data: TaskData = {
     id: fm.id ?? "",
     title: fm.title ?? "",
@@ -195,21 +207,22 @@ export function parseTaskFile(raw: string): { data: TaskData; body: string } {
   };
   const foreign: Record<string, unknown> = {};
   for (const key of Object.keys(fm)) if (!OWNED_TASK_KEYS.has(key)) foreign[key] = fm[key];
-  if (Object.keys(foreign).length) (data as any)[FOREIGN_FM_KEY] = foreign;
+  if (Object.keys(foreign).length) (data as TaskData & Frontmatter)[FOREIGN_FM_KEY] = foreign;
   return { data, body };
 }
 
 export function serializeTask(data: TaskData, body: string): string {
-  const { [FOREIGN_FM_KEY]: foreign, ...owned } = data as any;
+  const { [FOREIGN_FM_KEY]: foreign, ...owned } = data as TaskData & { [FOREIGN_FM_KEY]?: Frontmatter };
   // Owned keys first so the plugin's canonical layout stays stable, foreign
   // ones appended after. They cannot collide: only non-owned keys are captured.
-  const fm: any = { ...owned, ...((foreign as Record<string, unknown>) ?? {}) };
+  const fm: Frontmatter = { ...owned, ...(foreign ?? {}) };
   // Empty arrays/strings get pruned by joinFrontmatter
   return joinFrontmatter(fm, body || `\n# ${data.title || t("fallback.untitledTask")}\n`);
 }
 
 // Shared parser for the configurable set fields, used at every level.
-function parseConfigurableSet(fm: any) {
+function parseConfigurableSet(raw: Frontmatter) {
+  const fm = raw as Loose<ConfigurableSet>;
   return {
     status_set: fm.status_set,
     priorities: fm.priorities,
@@ -227,13 +240,15 @@ function parseConfigurableSet(fm: any) {
     notify_system: typeof fm.notify_system === "boolean" ? fm.notify_system : undefined,
     notify_ntfy: typeof fm.notify_ntfy === "boolean" ? fm.notify_ntfy : undefined,
     calendar_sync: typeof fm.calendar_sync === "boolean" ? fm.calendar_sync : undefined,
-    calendar_sync_status_policy: CALENDAR_SYNC_STATUS_POLICIES.has(fm.calendar_sync_status_policy) ? fm.calendar_sync_status_policy : undefined,
+    calendar_sync_status_policy: CALENDAR_SYNC_STATUS_POLICIES.has(fm.calendar_sync_status_policy as string) ? fm.calendar_sync_status_policy : undefined,
     calendar_sync_rules: Array.isArray(fm.calendar_sync_rules) ? withoutRemovedCalendarTargets(fm.calendar_sync_rules) : undefined,
   };
 }
 
 export function parseWorkspaceConfig(raw: string): { config: WorkspaceConfig; body: string } {
-  const { fm, body } = splitFrontmatter(raw);
+  const parsed = splitFrontmatter(raw);
+  const fm = parsed.fm as Loose<WorkspaceConfig>;
+  const body = parsed.body;
   const set = parseConfigurableSet(fm);
   return {
     config: {
@@ -277,7 +292,9 @@ export function parseWorkspaceConfig(raw: string): { config: WorkspaceConfig; bo
 }
 
 export function parseSpaceConfig(raw: string): { config: SpaceConfig; body: string } {
-  const { fm, body } = splitFrontmatter(raw);
+  const parsed = splitFrontmatter(raw);
+  const fm = parsed.fm as Loose<SpaceConfig>;
+  const body = parsed.body;
   return {
     config: {
       space_id: fm.space_id ?? "",
@@ -294,7 +311,9 @@ export function parseSpaceConfig(raw: string): { config: SpaceConfig; body: stri
 }
 
 export function parseFolderConfig(raw: string): { config: FolderConfig; body: string } {
-  const { fm, body } = splitFrontmatter(raw);
+  const parsed = splitFrontmatter(raw);
+  const fm = parsed.fm as Loose<FolderConfig>;
+  const body = parsed.body;
   return {
     config: {
       folder_id: fm.folder_id ?? "",
@@ -309,7 +328,9 @@ export function parseFolderConfig(raw: string): { config: FolderConfig; body: st
 }
 
 export function parseListConfig(raw: string): { config: ListConfig; body: string } {
-  const { fm, body } = splitFrontmatter(raw);
+  const parsed = splitFrontmatter(raw);
+  const fm = parsed.fm as Loose<ListConfig>;
+  const body = parsed.body;
   return {
     config: {
       list_id: fm.list_id ?? "",
@@ -328,7 +349,9 @@ export function parseListConfig(raw: string): { config: ListConfig; body: string
 }
 
 export function parseDocMeta(raw: string): { meta: DocMeta; body: string } {
-  const { fm, body } = splitFrontmatter(raw);
+  const parsed = splitFrontmatter(raw);
+  const fm = parsed.fm as Loose<DocMeta>;
+  const body = parsed.body;
   return {
     meta: {
       doc_id: fm.doc_id ?? "",
@@ -346,7 +369,9 @@ export function parseDocMeta(raw: string): { meta: DocMeta; body: string } {
 }
 
 export function parseDocPage(raw: string): { page: DocPage; body: string } {
-  const { fm, body } = splitFrontmatter(raw);
+  const parsed = splitFrontmatter(raw);
+  const fm = parsed.fm as Loose<DocPage>;
+  const body = parsed.body;
   return {
     page: {
       page_id: fm.page_id ?? "",
@@ -364,7 +389,9 @@ export function parseDocPage(raw: string): { page: DocPage; body: string } {
 }
 
 export function parseViewConfig(raw: string): { config: ViewConfig; body: string } {
-  const { fm, body } = splitFrontmatter(raw);
+  const parsed = splitFrontmatter(raw);
+  const fm = parsed.fm as Loose<ViewConfig>;
+  const body = parsed.body;
   return {
     config: {
       view_id: fm.view_id ?? "",

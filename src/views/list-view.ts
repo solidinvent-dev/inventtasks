@@ -1,8 +1,8 @@
 import { Notice, Platform, setIcon } from "obsidian";
-import { showContextMenu } from "../ui/menu";
+import { showContextMenu, type MenuItem } from "../ui/menu";
 import type InventTasksPlugin from "../main";
 import { favoriteToggleItems } from "./favorites";
-import { TaskFile, StatusDef, PriorityDef, CustomFieldDef, parentTaskIds } from "../types";
+import { TaskFile, TaskData, PriorityId, CustomFieldDef, parentTaskIds } from "../types";
 import { renderCustomFieldValue } from "../ui/cf-render";
 import { appendActivity } from "../data/activity";
 import { pickCheckboxCheckedStatus, pickCheckboxUncheckedStatus, type CheckboxAction } from "../data/status-helpers";
@@ -10,13 +10,14 @@ import { ViewState } from "./main-view";
 import { groupTasks, GroupBucket } from "../data/filters";
 import { buildSubtaskTree, flattenSubtaskRows, SubtaskTree, NestedRow, maxSubtaskDepth } from "../data/subtasks";
 import { statusChip, priorityChip, renderTagsCell, showPopover, buildDropdown, applyChipStyleByKind, chipKindForGroupBy, renderGroupHeaderChip, renderListReference } from "../ui/components";
-import { QuickTaskModal } from "../modals/create-modals";
+import { QuickTaskModal, type QuickTaskOptions } from "../modals/create-modals";
 import { t as tr, fieldLabel, fieldLabelFrom } from "../i18n";
 import { ConfirmModal } from "../modals/confirm-modal";
 import { MoveTaskModal } from "../modals/move-modal";
 import { TaskModal } from "../modals/task-modal";
 import { renderIconish, renderFieldIcon } from "../ui/icons";
-import { fillCalcCell, hasAnyCalc, openCalcMenu, persistColumnCalcs } from "./column-calc";
+import { fillCalcCell, hasAnyCalc, openCalcMenu, persistColumnCalcs, type RowViewContext } from "./column-calc";
+import { fireAndForget } from "../utils/async";
 import { effectiveCustomFieldValue } from "../data/custom-fields";
 import { renderDateTimeInput, type DateTimeInputHandle, type DateTimeInputKind } from "../ui/datetime-field";
 import { groupCollapseKey } from "../view-state";
@@ -28,25 +29,41 @@ interface RenderOpts {
   state: ViewState;
   plugin: InventTasksPlugin;
   onTaskClick: (t: TaskFile) => void;
-  context: { statuses: StatusDef[]; priorities: PriorityDef[]; priorityLabels: Record<number, string>; visibleFields: string[] };
+  context: RowViewContext;
   // Re-render the view body (e.g. after changing a column calculation).
   rerender?: () => void;
   onToggleGroup?: (bucketKey: string) => void;
 }
 
+// Transient bookkeeping the List view stashes on the view state between renders.
+interface ListStateExtras {
+  __listScrollLeft?: number;
+  __listScrollTop?: number;
+  __listRenderedCount?: number;
+  __collapsedSubtasks?: Set<string>;
+}
+
+// Lazy-render observer kept on the scroll container across re-renders.
+interface ListScroller extends HTMLElement {
+  __itListIO?: IntersectionObserver;
+}
+
+type TaskMutator = (data: TaskData, body: string) => { data: TaskData; body?: string } | void;
+type QuickTaskPreset = NonNullable<QuickTaskOptions["preset"]>;
+
 function rememberListScroll(opts: RenderOpts, source?: HTMLElement) {
   const wrap = source?.closest(".it-list-wrap") as HTMLElement | null;
   if (!wrap) return;
-  (opts.state as any).__listScrollLeft = wrap.scrollLeft;
-  (opts.state as any).__listScrollTop = wrap.scrollTop;
+  (opts.state as ListStateExtras).__listScrollLeft = wrap.scrollLeft;
+  (opts.state as ListStateExtras).__listScrollTop = wrap.scrollTop;
 }
 
 function restoreListScroll(opts: RenderOpts) {
-  const left = Number((opts.state as any).__listScrollLeft);
-  const top = Number((opts.state as any).__listScrollTop);
+  const left = Number((opts.state as ListStateExtras).__listScrollLeft);
+  const top = Number((opts.state as ListStateExtras).__listScrollTop);
   if (!Number.isFinite(left) && !Number.isFinite(top)) return;
   const apply = () => {
-    const wrap = opts.parent.querySelector(".it-list-wrap") as HTMLElement | null;
+    const wrap = opts.parent.querySelector<HTMLElement>(".it-list-wrap");
     if (!wrap) return;
     if (Number.isFinite(left)) wrap.scrollLeft = left;
     if (Number.isFinite(top)) wrap.scrollTop = top;
@@ -59,7 +76,7 @@ async function updateTaskPreservingListScroll(
   opts: RenderOpts,
   source: HTMLElement | undefined,
   taskId: string,
-  fn: Parameters<InventTasksPlugin["index"]["updateTask"]>[1],
+  fn: TaskMutator,
 ) {
   rememberListScroll(opts, source);
   await opts.plugin.index.updateTask(taskId, fn);
@@ -69,7 +86,7 @@ async function updateTaskPreservingListScroll(
 function renderInlineDateTimeInput(
   parent: HTMLElement,
   kind: DateTimeInputKind,
-  value: any,
+  value: unknown,
   onCommit: (value: string | null, handle: DateTimeInputHandle) => void,
 ): DateTimeInputHandle {
   return renderDateTimeInput({
@@ -85,7 +102,7 @@ function renderInlineDateTimeInput(
   });
 }
 
-async function updateCustomFieldValue(opts: RenderOpts, task: TaskFile, field: CustomFieldDef, value: any, handle?: DateTimeInputHandle, source?: HTMLElement) {
+async function updateCustomFieldValue(opts: RenderOpts, task: TaskFile, field: CustomFieldDef, value: unknown, handle?: DateTimeInputHandle, source?: HTMLElement) {
   if (field.required && (value === null || value === undefined || value === "")) {
     new Notice(tr("task.notice.requiredField", { name: field.name }));
     handle?.reset(task.data.custom_fields?.[field.id]);
@@ -387,9 +404,9 @@ function renderOptionMultiPicker(
   });
 }
 
-function renderTaskModalCell(cell: HTMLElement, task: TaskFile, opts: RenderOpts, field: CustomFieldDef, raw: any) {
+function renderTaskModalCell(cell: HTMLElement, task: TaskFile, opts: RenderOpts, field: CustomFieldDef, raw: unknown) {
   cell.addClass("it-table-editable");
-  renderCustomFieldValue(cell, field, raw, { task, index: opts.plugin.index, mode: "list", chipStyles: (opts.context as any).chipStyles, subtaskStats: (opts.context as any).subtaskStats });
+  renderCustomFieldValue(cell, field, raw, { task, index: opts.plugin.index, mode: "list", chipStyles: opts.context.chipStyles, subtaskStats: opts.context.subtaskStats });
   if (!cell.textContent?.trim()) cell.createSpan({ cls: "it-table-edit-display is-empty", text: "—" });
   cell.addEventListener("click", (e) => {
     e.preventDefault();
@@ -415,8 +432,8 @@ function openDocFromList(opts: RenderOpts, docPath: string | undefined) {
   else void opts.plugin.activateView().then(() => opts.plugin.getMainView()?.openDocLocation(docPath));
 }
 
-function renderRelationshipLinks(cell: HTMLElement, task: TaskFile, _field: CustomFieldDef, opts: RenderOpts, raw: any) {
-  const ids = Array.isArray(raw) ? raw.filter((x) => typeof x === "string") : [];
+function renderRelationshipLinks(cell: HTMLElement, task: TaskFile, _field: CustomFieldDef, opts: RenderOpts, raw: unknown) {
+  const ids = Array.isArray(raw) ? (raw as unknown[]).filter((x): x is string => typeof x === "string") : [];
   if (!ids.length) { renderEmptyModalCell(cell, task, opts); return; }
   for (const id of ids.slice(0, 3)) {
     const linked = opts.plugin.index.tasksById.get(id);
@@ -432,8 +449,8 @@ function renderRelationshipLinks(cell: HTMLElement, task: TaskFile, _field: Cust
   if (ids.length > 3) cell.createSpan({ cls: "it-chip it-chip-meta it-cf-display", text: `+${ids.length - 3}` });
 }
 
-function renderDocRelationshipLinks(cell: HTMLElement, task: TaskFile, _field: CustomFieldDef, opts: RenderOpts, raw: any) {
-  const ids = Array.isArray(raw) ? raw.filter((x) => typeof x === "string") : [];
+function renderDocRelationshipLinks(cell: HTMLElement, task: TaskFile, _field: CustomFieldDef, opts: RenderOpts, raw: unknown) {
+  const ids = Array.isArray(raw) ? (raw as unknown[]).filter((x): x is string => typeof x === "string") : [];
   if (!ids.length) { renderEmptyModalCell(cell, task, opts); return; }
   for (const id of ids.slice(0, 3)) {
     const doc = opts.plugin.index.docById(id);
@@ -456,8 +473,8 @@ function renderCustomFieldEditor(cell: HTMLElement, task: TaskFile, field: Custo
       task,
       index: opts.plugin.index,
       mode: "list",
-      chipStyles: (opts.context as any).chipStyles,
-      subtaskStats: (opts.context as any).subtaskStats,
+      chipStyles: opts.context.chipStyles,
+      subtaskStats: opts.context.subtaskStats,
     });
   };
 
@@ -485,7 +502,7 @@ function renderCustomFieldEditor(cell: HTMLElement, task: TaskFile, field: Custo
   }
 
   if (field.type === "text") {
-    const value = String(raw ?? "");
+    const value = String((raw as string | null | undefined) ?? "");
     if (Platform.isMobile) {
       cell.addClass("it-table-editable");
       stopCellClick(cell);
@@ -508,7 +525,7 @@ function renderCustomFieldEditor(cell: HTMLElement, task: TaskFile, field: Custo
     if (!cell.textContent?.trim()) cell.createSpan({ cls: "it-table-edit-display is-empty", text: "—" });
     cell.addEventListener("click", (e) => {
       e.stopPropagation();
-      renderValuePopover(cell, String(raw ?? ""), { textarea: true, placeholder: field.name }, (next) => void updateCustomFieldValue(opts, task, field, next, undefined, cell));
+      renderValuePopover(cell, String((raw as string | null | undefined) ?? ""), { textarea: true, placeholder: field.name }, (next) => void updateCustomFieldValue(opts, task, field, next, undefined, cell));
     });
     return;
   }
@@ -532,19 +549,19 @@ function renderCustomFieldEditor(cell: HTMLElement, task: TaskFile, field: Custo
   if (field.type === "dropdown") {
     cell.addClass("it-table-editable");
     stopCellClick(cell);
-    const current = String(raw ?? "");
+    const current = String((raw as string | null | undefined) ?? "");
     const opt = field.options?.find((o) => (o.value ?? o.label) === current || o.label === current);
     const chip = cell.createEl("button", { cls: "it-chip it-chip-tag it-table-edit-display", text: opt?.label || (current || "—") });
     if (opt?.color) chip.style.setProperty("--chip-color", opt.color);
-    applyChipStyleByKind(chip, "custom_field", (opts.context as any).chipStyles);
+    applyChipStyleByKind(chip, "custom_field", opts.context.chipStyles);
     chip.addEventListener("click", (e) => {
       e.stopPropagation();
-      showPopover(chip, (root) => buildDropdown({
+      showPopover(chip, (root) => buildDropdown<string | null>({
         parent: root,
-        current: raw ?? null,
+        current: (raw as string | null | undefined) ?? null,
         items: [
-          ...(field.options || []).map((o) => ({ value: (o.value ?? o.label) as any, label: o.label, color: o.color })),
-          { value: null as any, label: "—" },
+          ...(field.options || []).map((o) => ({ value: o.value ?? o.label, label: o.label, color: o.color })),
+          { value: null, label: "—" },
         ],
         onSelect: (v) => {
           closePopovers();
@@ -562,7 +579,8 @@ function renderCustomFieldEditor(cell: HTMLElement, task: TaskFile, field: Custo
     if (!cell.textContent?.trim()) cell.createSpan({ cls: "it-table-edit-display is-empty", text: "—" });
     cell.addEventListener("click", (e) => {
       e.stopPropagation();
-      const selected = Array.isArray(raw) ? raw.map(String) : raw ? [String(raw)] : [];
+      const scalar = raw as string | number | boolean | null | undefined;
+      const selected = Array.isArray(raw) ? raw.map(String) : scalar ? [String(scalar)] : [];
       renderOptionMultiPicker(cell, selected, (field.options || []).map((o) => ({ value: o.value ?? o.label, label: o.label, color: o.color })), (values) => {
         void updateCustomFieldValue(opts, task, field, values, undefined, cell);
       });
@@ -594,7 +612,7 @@ function renderCustomFieldEditor(cell: HTMLElement, task: TaskFile, field: Custo
   }
 
   if (field.type === "progress_auto") {
-    const resolved = effectiveCustomFieldValue(task, field, { subtaskStats: (opts.context as any).subtaskStats, allTasks: (opts.context as any).subtaskStats ? undefined : opts.plugin.index.allTasks() });
+    const resolved: unknown = effectiveCustomFieldValue(task, field, { subtaskStats: opts.context.subtaskStats, allTasks: opts.context.subtaskStats ? undefined : opts.plugin.index.allTasks() });
     renderProgressDisplay(cell, Number(resolved) || 0, false);
     return;
   }
@@ -643,7 +661,7 @@ function colLine(field: string): string {
 // order, minus the title-cluster fields, minus custom fields that no longer
 // resolve (deleted CF definitions would otherwise reserve an empty column).
 function orderedColumns(opts: RenderOpts): string[] {
-  const customFields = ((opts.context as any).customFields as Array<{ id: string }>) || [];
+  const customFields = (opts.context.customFields as Array<{ id: string }>) || [];
   const cfExists = (id: string) => customFields.some((cf) => cf.id === id);
   return opts.context.visibleFields.filter((f) => {
     if (TITLE_CLUSTER.has(f)) return false;
@@ -660,14 +678,14 @@ export function renderListView(opts: RenderOpts) {
   // scroll container (refreshContent reuses the body element). Done before the
   // empty-state early return so a now-empty list doesn't leave one dangling.
   const scroller = parent;
-  (scroller as any).__itListIO?.disconnect?.();
-  (scroller as any).__itListIO = undefined;
+  (scroller as ListScroller).__itListIO?.disconnect?.();
+  (scroller as ListScroller).__itListIO = undefined;
 
   if (tasks.length === 0) {
     parent.createDiv({ cls: "it-empty-state-small", text: tr("list.noTasks") });
     if (state.location.kind === "list") {
       const cta = parent.createEl("button", { cls: "it-btn-primary", text: tr("list.newTask") });
-      cta.addEventListener("click", () => new QuickTaskModal(plugin.app, plugin, (state.location as any).path).open());
+      cta.addEventListener("click", () => new QuickTaskModal(plugin.app, plugin, (state.location as { path: string }).path).open());
     }
     return;
   }
@@ -675,9 +693,9 @@ export function renderListView(opts: RenderOpts) {
   // Nested mode: group only the ROOTS (a parent + its subtasks stay together in
   // the parent's group), then expand each root's subtree under it. Flat/parents
   // mode groups the whole set (subtasks already excluded upstream for parents).
-  const nested = (context as any).subtaskMode === "nested";
+  const nested = context.subtaskMode === "nested";
   const tree: SubtaskTree | null = nested ? buildSubtaskTree(tasks) : null;
-  const collapsed: Set<string> = ((state as any).__collapsedSubtasks ||= new Set<string>());
+  const collapsed: Set<string> = ((state as ListStateExtras).__collapsedSubtasks ||= new Set<string>());
   const groupSource = nested ? tree!.roots : tasks;
 
   const buckets = state.groupBy
@@ -685,17 +703,17 @@ export function renderListView(opts: RenderOpts) {
         statuses: context.statuses,
         priorities: context.priorities,
         priorityLabels: context.priorityLabels,
-        tagsOrder: (context as any).tagsOrder,
-        contextOrder: (context as any).contextOrder,
-        taskTypesOrder: (context as any).taskTypesOrder,
-        tagsPalette: (context as any).tagsPalette,
-        contextLabels: (context as any).contextLabels,
-        customFields: (context as any).customFields,
-        listMeta: (context as any).listMeta,
-        subtaskStats: (context as any).subtaskStats,
-        taskTitles: (context as any).taskTitles,
-        emptyPositions: (context as any).emptyPositions,
-        fieldLabels: (context as any).fieldLabels,
+        tagsOrder: context.tagsOrder,
+        contextOrder: context.contextOrder,
+        taskTypesOrder: context.taskTypesOrder,
+        tagsPalette: context.tagsPalette,
+        contextLabels: context.contextLabels,
+        customFields: context.customFields,
+        listMeta: context.listMeta,
+        subtaskStats: context.subtaskStats,
+        taskTitles: context.taskTitles,
+        emptyPositions: context.emptyPositions,
+        fieldLabels: context.fieldLabels,
         direction: state.groupDirection,
       })
     : [{ key: "__all", label: tr("list.tasks"), tasks: groupSource } as GroupBucket];
@@ -711,11 +729,11 @@ export function renderListView(opts: RenderOpts) {
 
   const wrap = parent.createDiv({ cls: "it-list-wrap" });
   wrap.addEventListener("scroll", () => {
-    (state as any).__listScrollLeft = wrap.scrollLeft;
-    (state as any).__listScrollTop = wrap.scrollTop;
+    (state as ListStateExtras).__listScrollLeft = wrap.scrollLeft;
+    (state as ListStateExtras).__listScrollTop = wrap.scrollTop;
   });
-  const rememberedLeft = Number((state as any).__listScrollLeft);
-  const rememberedTop = Number((state as any).__listScrollTop);
+  const rememberedLeft = Number((state as ListStateExtras).__listScrollLeft);
+  const rememberedTop = Number((state as ListStateExtras).__listScrollTop);
   if (Number.isFinite(rememberedLeft)) wrap.scrollLeft = rememberedLeft;
   if (Number.isFinite(rememberedTop)) wrap.scrollTop = rememberedTop;
   window.requestAnimationFrame(() => {
@@ -782,7 +800,7 @@ export function renderListView(opts: RenderOpts) {
     // Remember how far we've rendered so a data-driven re-render (e.g. ticking
     // a checkbox while scrolled deep) restores the same extent, letting the
     // main view's scroll preservation land where the user was.
-    (state as any).__listRenderedCount = next;
+    (state as ListStateExtras).__listRenderedCount = next;
   };
 
   const VIRTUAL_THRESHOLD = 120;
@@ -792,7 +810,7 @@ export function renderListView(opts: RenderOpts) {
   }
 
   // Initial extent: a screenful, or however far we'd rendered before a refresh.
-  const prev = Number((state as any).__listRenderedCount) || 0;
+  const prev = Number((state as ListStateExtras).__listRenderedCount) || 0;
   renderChunk(Math.min(items.length, Math.max(80, prev)));
 
   if (next < items.length) {
@@ -803,13 +821,13 @@ export function renderListView(opts: RenderOpts) {
       if (next >= items.length) {
         io.disconnect();
         sentinel.remove();
-        (scroller as any).__itListIO = undefined;
+        (scroller as ListScroller).__itListIO = undefined;
       } else {
         grid.appendChild(sentinel); // keep the sentinel as the last child
       }
     }, { root: scroller, rootMargin: "0px 0px 900px 0px" });
     io.observe(sentinel);
-    (scroller as any).__itListIO = io;
+    (scroller as ListScroller).__itListIO = io;
   }
 }
 
@@ -836,9 +854,9 @@ function renderGroupHeader(grid: HTMLElement, bucket: GroupBucket, opts: RenderO
     });
   }
   const kind = chipKindForGroupBy(state.groupBy, (id) =>
-    (context as any).customFields?.find((f: any) => f.id === id)?.type,
+    context.customFields?.find((f) => f.id === id)?.type,
   );
-  renderGroupHeaderChip(inner, bucket, kind, (context as any).chipStyles);
+  renderGroupHeaderChip(inner, bucket, kind, context.chipStyles);
   inner.createSpan({ text: `${bucket.tasks.length}`, cls: "it-group-count" });
   // Actions sit on the RIGHT (direct child of the header, not the left cluster)
   // and are sticky-right so "+ Task" stays visible during horizontal scroll.
@@ -852,7 +870,7 @@ function renderGroupHeader(grid: HTMLElement, bucket: GroupBucket, opts: RenderO
     e.preventDefault();
     e.stopPropagation();
     const preset = computeBucketDefaults(bucket.key, state.groupBy, context);
-    const modalOpts: any = { preset };
+    const modalOpts: QuickTaskOptions = { preset };
     const loc = state.location;
     if (loc.kind === "list") modalOpts.listPath = loc.path;
     else if (loc.kind === "folder") modalOpts.scopeFolderPath = loc.path;
@@ -864,17 +882,17 @@ function renderGroupHeader(grid: HTMLElement, bucket: GroupBucket, opts: RenderO
 function renderColumnHeader(grid: HTMLElement, opts: RenderOpts, cols: string[]) {
   const head = grid.createDiv({ cls: "it-list-col-header it-subgrid-row" });
 
-  const customFields = ((opts.context as any).customFields as CustomFieldDef[]) || [];
+  const customFields = opts.context.customFields || [];
   const cfFor = (field: string): CustomFieldDef | undefined =>
     field.startsWith("custom_field:") ? customFields.find((c) => c.id === field.slice("custom_field:".length)) : undefined;
-  const fieldLabels = (opts.context as any).fieldLabels as Record<string, string> | undefined;
+  const fieldLabels = opts.context.fieldLabels;
   const labelFor = (field: string): string => {
     const cf = cfFor(field);
     if (cf) return cf.name || field.slice("custom_field:".length);
     return listColLabel(field, fieldLabels);
   };
 
-  const showIcons = !!(opts.context as any).showFieldIcons;
+  const showIcons = !!opts.context.showFieldIcons;
   const add = (gridCol: string, field: string, label: string) => {
     const cell = head.createDiv({ cls: "it-list-col-header-cell" });
     cell.style.gridColumn = gridCol;
@@ -897,8 +915,8 @@ function renderSummaryRow(grid: HTMLElement, opts: RenderOpts, cols: string[], t
   const row = grid.createDiv({ cls: "it-list-summary" + (mode === "grand" ? " is-grand" : " is-group") });
   row.addClass("it-subgrid-row");
 
-  const customFields = ((context as any).customFields as Array<{ id: string; name: string }>) || [];
-  const fieldLabels = (context as any).fieldLabels as Record<string, string> | undefined;
+  const customFields = (context.customFields as Array<{ id: string; name: string }>) || [];
+  const fieldLabels = context.fieldLabels;
   const labelFor = (field: string): string => {
     if (field === "title") return fieldLabelFrom(fieldLabels, "title");
     if (field.startsWith("custom_field:")) {
@@ -960,7 +978,7 @@ function renderRow(parent: HTMLElement, nrow: NestedRow, opts: RenderOpts, cols:
     });
     checkbox.addEventListener("click", (e) => e.stopPropagation());
     checkbox.addEventListener("focus", () => restoreListScroll(opts));
-    checkbox.addEventListener("change", async () => {
+    checkbox.addEventListener("change", fireAndForget(async () => {
       const set = plugin.index.resolveStatusSet(t.listPath).statuses;
       const preference = plugin.index.resolveViewDefaultValue<CheckboxAction>(
         "list", "checkbox_action", opts.state.location,
@@ -972,7 +990,7 @@ function renderRow(parent: HTMLElement, nrow: NestedRow, opts: RenderOpts, cols:
       if (target) await updateTaskPreservingListScroll(opts, checkbox, t.data.id, (d) => ({
         data: { ...d, status: target, activity: appendActivity(d.activity, { kind: "status", from: d.status ?? null, to: target }) },
       }));
-    });
+    }));
   }
 
   // ---- Leading cluster: type icon (emoji or Lucide) ----
@@ -1017,26 +1035,26 @@ function renderRow(parent: HTMLElement, nrow: NestedRow, opts: RenderOpts, cols:
       t.data.title || "",
       tr("common.untitled"),
       "it-row-title-text" + (isDone ? " is-done" : ""),
-      async (value) => {
+      fireAndForget(async (value: string | null) => {
         if (!value || value === t.data.title) return;
         await updateTaskPreservingListScroll(opts, titleEdit, t.data.id, (d) => ({
           data: { ...d, title: value, activity: appendActivity(d.activity, { kind: "title", from: d.title ?? null, to: value }) },
         }));
-      },
+      }),
       () => opts.onTaskClick(t),
       MAX_TASK_TITLE_LENGTH,
     );
   }
 
   if (isVisible(opts, "subtask_count")) {
-    const sub = (context as any).subtaskStats?.get(t.data.id)?.total ?? 0;
+    const sub = context.subtaskStats?.get(t.data.id)?.total ?? 0;
     if (sub > 0) {
       const badge = title.createSpan({ cls: "it-row-subtask-badge", text: `↳ ${sub}` });
       badge.title = tr("list.subitemsCount", { count: sub });
     }
   }
   if (isVisible(opts, "relationship_count")) {
-    const rc = (context as any).relationshipCounts?.get(t.data.id) ?? 0;
+    const rc = context.relationshipCounts?.get(t.data.id) ?? 0;
     if (rc > 0) title.createSpan({ cls: "it-row-subtask-badge", text: `🔗 ${rc}` });
   }
   // Multiple Lists: mark rows shown here that actually live in another list.
@@ -1059,9 +1077,9 @@ function renderRow(parent: HTMLElement, nrow: NestedRow, opts: RenderOpts, cols:
   setIcon(more, "more-horizontal");
   more.addEventListener("click", (e) => {
     e.stopPropagation();
-    const items: any[] = [
+    const items: MenuItem[] = [
       { label: tr("action.openModal"), icon: "expand", onClick: () => opts.onTaskClick(t) },
-      { label: tr("action.openMd"), icon: "file-text", onClick: () => plugin.index.openTaskInEditor(t.data.id) },
+      { label: tr("action.openMd"), icon: "file-text", onClick: () => void plugin.index.openTaskInEditor(t.data.id) },
       { label: tr("action.moveToList"), icon: "folder-input", onClick: () => new MoveTaskModal(plugin.app, plugin, t.data.id).open() },
     ];
     // Multiple Lists: when viewing a list this task is only linked into, offer
@@ -1076,14 +1094,14 @@ function renderRow(parent: HTMLElement, nrow: NestedRow, opts: RenderOpts, cols:
           message: tr("action.removeFromList"),
           destructive: true,
           confirmLabel: tr("common.remove"),
-          onConfirm: () => plugin.index.removeTaskFromList(t.data.id, loc.path),
+          onConfirm: () => void plugin.index.removeTaskFromList(t.data.id, loc.path),
         }).open(),
       });
     }
     items.push("separator");
     items.push(...favoriteToggleItems(plugin, t.data.id));
     items.push("separator");
-    items.push({ label: tr("common.delete"), icon: "trash", danger: true, onClick: () => new ConfirmModal(plugin.app, { title: tr("modal.deleteConfirm"), message: tr("action.moveToTrash", { title: t.data.title }), destructive: true, onConfirm: () => plugin.index.deleteTask(t.data.id) }).open() });
+    items.push({ label: tr("common.delete"), icon: "trash", danger: true, onClick: () => new ConfirmModal(plugin.app, { title: tr("modal.deleteConfirm"), message: tr("action.moveToTrash", { title: t.data.title }), destructive: true, onConfirm: () => void plugin.index.deleteTask(t.data.id) }).open() });
     showContextMenu(e, items);
   });
 
@@ -1095,14 +1113,14 @@ function renderRow(parent: HTMLElement, nrow: NestedRow, opts: RenderOpts, cols:
 // the placement is now order-driven.
 function renderPropertyCell(row: HTMLElement, t: TaskFile, field: string, opts: RenderOpts) {
   const { plugin, context } = opts;
-  const chipStyles = (context as any).chipStyles;
+  const chipStyles = context.chipStyles;
   const gcol = colLine(field);
 
   // Custom fields — each gets its own column (`cf-{id}`). Display goes through
   // the polymorphic cf-render dispatcher so per-type rendering stays consistent.
   if (field.startsWith("custom_field:")) {
     const id = field.slice("custom_field:".length);
-    const cf = ((context as any).customFields as CustomFieldDef[] | undefined)?.find((c) => c.id === id);
+    const cf = context.customFields?.find((c) => c.id === id);
     const cell = row.createDiv({ cls: "it-row-cf-cell", attr: { "data-field": field } });
     cell.style.gridColumn = gcol;
     if (cf) {
@@ -1128,10 +1146,10 @@ function renderPropertyCell(row: HTMLElement, t: TaskFile, field: string, opts: 
           parent: root,
           current: t.data.type || "task",
           items: types.map((tt) => ({ value: tt.id, label: tt.name, color: tt.color, icon: tt.icon })),
-          onSelect: async (v) => {
+          onSelect: fireAndForget(async (v: string) => {
             closePopovers();
             await updateTaskPreservingListScroll(opts, cell, t.data.id, (d) => ({ data: { ...d, type: v } }));
-          },
+          }),
         }));
       });
       return;
@@ -1149,12 +1167,12 @@ function renderPropertyCell(row: HTMLElement, t: TaskFile, field: string, opts: 
             parent: root,
             current: t.data.status,
             items: itemStatuses.map((s) => ({ value: s.id, label: s.name, color: s.color })),
-            onSelect: async (v) => {
+            onSelect: fireAndForget(async (v: string) => {
               await updateTaskPreservingListScroll(opts, cell, t.data.id, (d) => ({
                 data: { ...d, status: v, activity: appendActivity(d.activity, { kind: "status", from: d.status ?? null, to: v }) },
               }));
               document.querySelectorAll(".it-popover").forEach((el) => el.remove());
-            },
+            }),
           });
         });
       }, chipStyles);
@@ -1165,17 +1183,17 @@ function renderPropertyCell(row: HTMLElement, t: TaskFile, field: string, opts: 
       cell.style.gridColumn = gcol;
       priorityChip(cell, t.data.priority, context.priorities, (e) => {
         showPopover(e.currentTarget as HTMLElement, (root) => {
-          buildDropdown({
+          buildDropdown<PriorityId | null>({
             parent: root,
             current: t.data.priority,
             items: [
-              ...context.priorities.map((p) => ({ value: p.id as any, label: p.label, color: p.color })),
-              { value: null as any, label: tr("action.noPriority"), color: "#9E9E9E" },
+              ...context.priorities.map((p) => ({ value: p.id, label: p.label, color: p.color })),
+              { value: null, label: tr("action.noPriority"), color: "#9E9E9E" },
             ],
-            onSelect: async (v) => {
+            onSelect: fireAndForget(async (v: PriorityId | null) => {
               await updateTaskPreservingListScroll(opts, cell, t.data.id, (d) => ({ data: { ...d, priority: v ?? null } }));
               document.querySelectorAll(".it-popover").forEach((el) => el.remove());
-            },
+            }),
           });
         });
       }, chipStyles);
@@ -1210,9 +1228,9 @@ function renderPropertyCell(row: HTMLElement, t: TaskFile, field: string, opts: 
         const map = new Map<string, { value: string; label: string; color?: string }>();
         for (const tag of tagsPalette) map.set(tag.name, { value: tag.name, label: tag.name, color: tag.color });
         for (const tag of t.data.tags || []) if (!map.has(tag)) map.set(tag, { value: tag, label: tag });
-        renderOptionMultiPicker(cell, t.data.tags || [], Array.from(map.values()), async (values) => {
+        renderOptionMultiPicker(cell, t.data.tags || [], Array.from(map.values()), fireAndForget(async (values: string[]) => {
           await updateTaskPreservingListScroll(opts, cell, t.data.id, (d) => ({ data: { ...d, tags: values } }));
-        });
+        }));
       });
       return;
     }
@@ -1232,9 +1250,9 @@ function renderPropertyCell(row: HTMLElement, t: TaskFile, field: string, opts: 
       stopCellClick(cell);
       cell.addEventListener("click", (e) => {
         e.stopPropagation();
-        renderOptionMultiPicker(cell, t.data.context || [], labels.map((cl) => ({ value: cl.name, label: cl.name, color: cl.color })), async (values) => {
+        renderOptionMultiPicker(cell, t.data.context || [], labels.map((cl) => ({ value: cl.name, label: cl.name, color: cl.color })), fireAndForget(async (values: string[]) => {
           await updateTaskPreservingListScroll(opts, cell, t.data.id, (d) => ({ data: { ...d, context: values } }));
-        });
+        }));
       });
       return;
     }
@@ -1305,11 +1323,11 @@ function typeEmoji(type?: string): string {
   }
 }
 
-function computeBucketDefaults(key: string, groupBy: string, _ctx: any): any {
+function computeBucketDefaults(key: string, groupBy: string, _ctx: unknown): QuickTaskPreset {
   if (groupBy === "status") return { status: key };
   if (groupBy === "priority") {
     const n = parseInt(key, 10);
-    return { priority: isNaN(n) ? null : n };
+    return { priority: isNaN(n) ? null : (n as PriorityId) };
   }
   if (groupBy === "tags") {
     if (key === "__no_tags") return {};

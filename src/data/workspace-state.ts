@@ -82,10 +82,10 @@ export function parseWorkspaceStateContent(raw: string, path: string): ReadWorks
   const json = (match ? match[1] : body).trim();
   if (!json) return { version: STATE_VERSION };
   try {
-    const parsed = JSON.parse(json);
+    const parsed = JSON.parse(json) as Partial<ReadWorkspaceSharedState> | null;
     return parsed && typeof parsed === "object" ? { version: STATE_VERSION, ...parsed } : { version: STATE_VERSION };
-  } catch (e: any) {
-    return { version: STATE_VERSION, parseIssue: { path, message: e?.message || String(e) } };
+  } catch (e) {
+    return { version: STATE_VERSION, parseIssue: { path, message: (e as Error | undefined)?.message || String(e) } };
   }
 }
 

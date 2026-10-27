@@ -6,6 +6,7 @@ import { hierarchyLabel, t } from "../i18n";
 import { renderIconish } from "../ui/icons";
 import { taskMatchesQuery } from "../data/search-match";
 import { TaskModal } from "./task-modal";
+import { fireAndForget } from "../utils/async";
 
 // One entry in the global search results — a task, a navigable container, a Doc,
 // or a Doc page.
@@ -30,7 +31,7 @@ export class SearchModal extends SuggestModal<SearchItem> {
   }
 
   onOpen(): void {
-    super.onOpen();
+    void super.onOpen();
     // The two costly scopes are toggled here rather than buried in settings:
     // this is where their effect is visible, and where a user who just failed
     // to find something will look.
@@ -48,12 +49,12 @@ export class SearchModal extends SuggestModal<SearchItem> {
     // A click inside a SuggestModal would otherwise reach the prompt and take
     // focus off the query field, so keep it here and hand focus straight back.
     wrap.addEventListener("mousedown", (e) => e.preventDefault());
-    box.addEventListener("change", async () => {
+    box.addEventListener("change", fireAndForget(async () => {
       this.plugin.prefs[key] = box.checked;
       await this.plugin.saveSettings();
       this.inputEl.focus();
       this.inputEl.dispatchEvent(new Event("input"));   // re-run with the new scope
-    });
+    }));
   }
 
   getSuggestions(query: string): SearchItem[] {

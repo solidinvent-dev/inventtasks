@@ -47,7 +47,7 @@ export class HttpSyncTransport implements SyncTransport {
   private fail(status: number, path: string, body?: string): never {
     if (status === 401) throw new SyncError("unauthorized — check the API token", status);
     let detail = "";
-    try { detail = body ? (JSON.parse(body).error ?? "") : ""; } catch { detail = summarizeErrorBody(body); }
+    try { detail = body ? ((JSON.parse(body) as { error?: string }).error ?? "") : ""; } catch { detail = summarizeErrorBody(body); }
     throw new SyncError(`server replied ${status} for ${path}${detail ? `: ${detail}` : ""}`, status);
   }
 

@@ -20,6 +20,7 @@ import { favoriteToggleItems, favoriteRelocateItems, resolveFavorite, favLocatio
 import { notificationOverview } from "./notifications-view";
 import { DEFAULT_GLOBAL_NAV } from "../settings";
 import { menuLabel, navLabel, t } from "../i18n";
+import { fireAndForget } from "../utils/async";
 
 // Items in the explorer "Global" section (orderable + hideable).
 const GLOBAL_NAV_ITEMS: Array<{ key: string; icon: string }> = [
@@ -159,8 +160,8 @@ export function renderSidebar(parent: HTMLElement, opts: SidebarOptions) {
   title.addEventListener("click", (e) => {
     showContextMenu(e, [
       { label: t("nav.openWorkspaceRoot"), icon: "layers", onClick: () => opts.onSelect({ kind: "everything" }) },
-      { label: menuLabel("copyLink"), icon: "link", onClick: () => opts.plugin.copyElementLink("workspace") },
-      { label: menuLabel("copyId"), icon: "fingerprint", onClick: () => opts.plugin.copyTextToClipboard(opts.plugin.index.workspace?.workspace_id ?? "") },
+      { label: menuLabel("copyLink"), icon: "link", onClick: () => void opts.plugin.copyElementLink("workspace") },
+      { label: menuLabel("copyId"), icon: "fingerprint", onClick: () => void opts.plugin.copyTextToClipboard(opts.plugin.index.workspace?.workspace_id ?? "") },
       "separator",
       { label: t("nav.workspaceSettings"), icon: "settings", onClick: () => new ConfigModal(opts.plugin.app, opts.plugin, "workspace").open() },
     ]);
@@ -221,7 +222,7 @@ export function renderSidebar(parent: HTMLElement, opts: SidebarOptions) {
   });
   setIcon(syncNowBtn, "refresh-cw");
   syncNowBtn.addClass("it-shortcut-sync");
-  syncNowBtn.addEventListener("click", async () => {
+  syncNowBtn.addEventListener("click", fireAndForget(async () => {
     syncNowBtn.disabled = true;
     syncNowBtn.setAttribute("aria-label", t("calSync.syncing"));
     syncNowBtn.setAttribute("title", t("calSync.syncing"));
@@ -229,13 +230,13 @@ export function renderSidebar(parent: HTMLElement, opts: SidebarOptions) {
       await opts.plugin.syncNow();
       const warning = opts.plugin.syncWarningMessage();
       new Notice(warning ? t("calSync.syncDoneWithWarnings", { message: warning }) : t("calSync.syncDone"));
-    } catch (e: any) {
-      new Notice(`${t("calSync.syncFailed")}: ${e?.message || e}`);
+    } catch (e) {
+      new Notice(`${t("calSync.syncFailed")}: ${(e as Error | undefined)?.message || (e as string)}`);
     }
     syncNowBtn.disabled = false;
     syncNowBtn.setAttribute("aria-label", t("calSync.syncNowBtn"));
     syncNowBtn.setAttribute("title", t("calSync.syncNowBtn"));
-  });
+  }));
 
   // ---- Global section (orderable + hideable items) ----
   const global = parent.createDiv({ cls: "it-sidebar-section" });
@@ -353,9 +354,9 @@ function renderSpaceRow(
       { label: menuLabel("export"), icon: "download", onClick: () => new ExportModal(opts.plugin.app, opts.plugin, { scope: "space", path: space.path }).open() },
       { label: menuLabel("import"), icon: "upload", onClick: () => new ImportModal(opts.plugin.app, opts.plugin, { destination: { spacePath: space.path }, allowedScopes: ["folder", "list"], label: space.config.name }).open() },
       { label: menuLabel("saveTemplate"), icon: "layout-template", onClick: () => new SaveTemplateModal(opts.plugin.app, opts.plugin, "space", { path: space.path }, { name: space.config.name, icon: space.config.icon }).open() },
-      { label: menuLabel("copyLink"), icon: "link", onClick: () => opts.plugin.copyElementLink("space", space.config.space_id) },
-      { label: menuLabel("copyId"), icon: "fingerprint", onClick: () => opts.plugin.copyTextToClipboard(space.config.space_id ?? "") },
-      { label: menuLabel("copyPath"), icon: "folder-tree", onClick: () => opts.plugin.copyTextToClipboard(space.path, "deepLink.pathCopied") },
+      { label: menuLabel("copyLink"), icon: "link", onClick: () => void opts.plugin.copyElementLink("space", space.config.space_id) },
+      { label: menuLabel("copyId"), icon: "fingerprint", onClick: () => void opts.plugin.copyTextToClipboard(space.config.space_id ?? "") },
+      { label: menuLabel("copyPath"), icon: "folder-tree", onClick: () => void opts.plugin.copyTextToClipboard(space.path, "deepLink.pathCopied") },
       "separator",
       {
         label: menuLabel("deleteSpace"),
@@ -365,7 +366,7 @@ function renderSpaceRow(
           title: t("confirm.deleteSpace"),
           message: `This will move the entire folder "${space.config.name}" to trash.`,
           destructive: true,
-          onConfirm: async () => { await opts.plugin.index.deleteSpace(space.path); new Notice(t("sidebar.spaceDeleted")); },
+          onConfirm: fireAndForget(async () => { await opts.plugin.index.deleteSpace(space.path); new Notice(t("sidebar.spaceDeleted")); }),
         }).open(),
       },
     ]);
@@ -386,7 +387,7 @@ function renderSpaceRow(
     row.addClass("is-drag-over");
   });
   row.addEventListener("dragleave", () => row.removeClass("is-drag-over"));
-  row.addEventListener("drop", async (e) => {
+  row.addEventListener("drop", fireAndForget(async (e) => {
     e.preventDefault();
     row.removeClass("is-drag-over");
     if (!activeDrag || activeDrag.kind !== "space" || activeDrag.path === space.path) return;
@@ -397,7 +398,7 @@ function renderSpaceRow(
     const newOrder = reorderArray(current, activeDrag.path, space.path, insertAfter);
     activeDrag = null;
     await opts.plugin.index.updateSidebarOrder({ ...opts.plugin.index.getSidebarOrder(), spaces: newOrder });
-  });
+  }));
 
   // Render children when expanded
   if (!collapsed) {
@@ -476,9 +477,9 @@ function renderFolderRow(
       { label: menuLabel("import"), icon: "upload", onClick: () => new ImportModal(opts.plugin.app, opts.plugin, { destination: { folderPath: folder.path }, allowedScopes: ["list"], label: folder.config.name }).open() },
       { label: menuLabel("saveTemplate"), icon: "layout-template", onClick: () => new SaveTemplateModal(opts.plugin.app, opts.plugin, "folder", { path: folder.path }, { name: folder.config.name, icon: folder.config.icon }).open() },
       { label: menuLabel("moveToSpace"), icon: "folder-input", onClick: () => new MoveFolderModal(opts.plugin.app, opts.plugin, folder.path).open() },
-      { label: menuLabel("copyLink"), icon: "link", onClick: () => opts.plugin.copyElementLink("folder", folder.config.folder_id) },
-      { label: menuLabel("copyId"), icon: "fingerprint", onClick: () => opts.plugin.copyTextToClipboard(folder.config.folder_id ?? "") },
-      { label: menuLabel("copyPath"), icon: "folder-tree", onClick: () => opts.plugin.copyTextToClipboard(folder.path, "deepLink.pathCopied") },
+      { label: menuLabel("copyLink"), icon: "link", onClick: () => void opts.plugin.copyElementLink("folder", folder.config.folder_id) },
+      { label: menuLabel("copyId"), icon: "fingerprint", onClick: () => void opts.plugin.copyTextToClipboard(folder.config.folder_id ?? "") },
+      { label: menuLabel("copyPath"), icon: "folder-tree", onClick: () => void opts.plugin.copyTextToClipboard(folder.path, "deepLink.pathCopied") },
       "separator",
       {
         label: menuLabel("deleteFolder"),
@@ -488,7 +489,7 @@ function renderFolderRow(
           title: t("confirm.deleteFolder"),
           message: `Move "${folder.config.name}" to trash?`,
           destructive: true,
-          onConfirm: () => opts.plugin.index.deleteFolder(folder.path),
+          onConfirm: () => void opts.plugin.index.deleteFolder(folder.path),
         }).open(),
       },
     ]);
@@ -509,7 +510,7 @@ function renderFolderRow(
     row.addClass("is-drag-over");
   });
   row.addEventListener("dragleave", () => row.removeClass("is-drag-over"));
-  row.addEventListener("drop", async (e) => {
+  row.addEventListener("drop", fireAndForget(async (e) => {
     e.preventDefault();
     row.removeClass("is-drag-over");
     if (!activeDrag || activeDrag.parentPath !== parentSpacePath || activeDrag.path === folder.path) return;
@@ -523,7 +524,7 @@ function renderFolderRow(
     const newChildOrder = reorderArray(current, activeDrag.path, folder.path, insertAfter);
     activeDrag = null;
     await opts.plugin.index.updateSidebarOrder({ ...stored, children: { ...stored.children, [parentSpacePath]: newChildOrder } });
-  });
+  }));
 
   // Render lists + docs within folder (expanded)
   if (!fcoll) {
@@ -595,9 +596,9 @@ function renderListRow(
       { label: t("action.importTask"), icon: "upload", onClick: () => new ImportModal(opts.plugin.app, opts.plugin, { destination: { listPath: list.path }, allowedScopes: ["task"], label: list.config.name }).open() },
       { label: menuLabel("saveTemplate"), icon: "layout-template", onClick: () => new SaveTemplateModal(opts.plugin.app, opts.plugin, "list", { path: list.path }, { name: list.config.name, icon: list.config.icon }).open() },
       { label: menuLabel("move"), icon: "folder-input", onClick: () => new MoveListModal(opts.plugin.app, opts.plugin, list.path).open() },
-      { label: menuLabel("copyLink"), icon: "link", onClick: () => opts.plugin.copyElementLink("list", list.config.list_id) },
-      { label: menuLabel("copyId"), icon: "fingerprint", onClick: () => opts.plugin.copyTextToClipboard(list.config.list_id ?? "") },
-      { label: menuLabel("copyPath"), icon: "folder-tree", onClick: () => opts.plugin.copyTextToClipboard(list.path, "deepLink.pathCopied") },
+      { label: menuLabel("copyLink"), icon: "link", onClick: () => void opts.plugin.copyElementLink("list", list.config.list_id) },
+      { label: menuLabel("copyId"), icon: "fingerprint", onClick: () => void opts.plugin.copyTextToClipboard(list.config.list_id ?? "") },
+      { label: menuLabel("copyPath"), icon: "folder-tree", onClick: () => void opts.plugin.copyTextToClipboard(list.path, "deepLink.pathCopied") },
       "separator",
       ...favoriteToggleItems(opts.plugin, list.path),
       "separator",
@@ -609,7 +610,7 @@ function renderListRow(
           title: t("confirm.deleteList"),
           message: `Move "${list.config.name}" to trash?`,
           destructive: true,
-          onConfirm: () => opts.plugin.index.deleteList(list.path),
+          onConfirm: () => void opts.plugin.index.deleteList(list.path),
         }).open(),
       },
     ]);
@@ -630,7 +631,7 @@ function renderListRow(
     row.addClass("is-drag-over");
   });
   row.addEventListener("dragleave", () => row.removeClass("is-drag-over"));
-  row.addEventListener("drop", async (e) => {
+  row.addEventListener("drop", fireAndForget(async (e) => {
     e.preventDefault();
     row.removeClass("is-drag-over");
     if (!activeDrag || activeDrag.parentPath !== parentPath || activeDrag.path === list.path) return;
@@ -645,7 +646,7 @@ function renderListRow(
     const newChildOrder = reorderArray(current, activeDrag.path, list.path, insertAfter);
     activeDrag = null;
     await opts.plugin.index.updateSidebarOrder({ ...stored, children: { ...stored.children, [parentPath]: newChildOrder } });
-  });
+  }));
 }
 
 // ---------- Doc row ----------
@@ -709,12 +710,12 @@ function renderDocRow(
     showContextMenu(e, [
       { label: t("docsMgr.openDoc"), icon: "book-open", onClick: () => opts.onSelect({ kind: "doc", path: docPath }) },
       "separator",
-      { label: menuLabel("rename"), icon: "pencil", onClick: () => promptRename(moreBtn, doc.name, t("sidebar.docNamePrompt"), (name) => opts.plugin.index.updateDoc(doc.doc_id, { name })) },
-      { label: t("action.changeIcon"), icon: "image", onClick: () => openIconPicker(moreBtn, doc.icon, (v) => opts.plugin.index.updateDoc(doc.doc_id, { icon: v })) },
-      { label: t("action.changeColor"), icon: "palette", onClick: () => openColorPicker(moreBtn, doc.color, (v) => opts.plugin.index.updateDoc(doc.doc_id, { color: v })) },
+      { label: menuLabel("rename"), icon: "pencil", onClick: () => promptRename(moreBtn, doc.name, t("sidebar.docNamePrompt"), (name) => void opts.plugin.index.updateDoc(doc.doc_id, { name })) },
+      { label: t("action.changeIcon"), icon: "image", onClick: () => openIconPicker(moreBtn, doc.icon, (v) => void opts.plugin.index.updateDoc(doc.doc_id, { icon: v })) },
+      { label: t("action.changeColor"), icon: "palette", onClick: () => openColorPicker(moreBtn, doc.color, (v) => void opts.plugin.index.updateDoc(doc.doc_id, { color: v })) },
       { label: menuLabel("move"), icon: "folder-input", onClick: () => new MoveDocModal(opts.plugin.app, opts.plugin, doc.doc_id).open() },
-      { label: menuLabel("copyLink"), icon: "link", onClick: () => opts.plugin.copyElementLink("doc", doc.doc_id) },
-      { label: menuLabel("copyId"), icon: "fingerprint", onClick: () => opts.plugin.copyTextToClipboard(doc.doc_id) },
+      { label: menuLabel("copyLink"), icon: "link", onClick: () => void opts.plugin.copyElementLink("doc", doc.doc_id) },
+      { label: menuLabel("copyId"), icon: "fingerprint", onClick: () => void opts.plugin.copyTextToClipboard(doc.doc_id) },
       "separator",
       ...favoriteToggleItems(opts.plugin, docPath),
       "separator",
@@ -722,7 +723,7 @@ function renderDocRow(
           title: t("docsMgr.deleteTitle"),
           message: t("docsMgr.deleteMsg", { name: doc.name }),
           destructive: true,
-          onConfirm: () => opts.plugin.index.deleteDoc(doc.doc_id),
+          onConfirm: () => void opts.plugin.index.deleteDoc(doc.doc_id),
         }).open() },
     ]);
   });
@@ -742,7 +743,7 @@ function renderDocRow(
     row.addClass("is-drag-over");
   });
   row.addEventListener("dragleave", () => row.removeClass("is-drag-over"));
-  row.addEventListener("drop", async (e) => {
+  row.addEventListener("drop", fireAndForget(async (e) => {
     e.preventDefault();
     row.removeClass("is-drag-over");
     if (!activeDrag || activeDrag.parentPath !== parentPath || activeDrag.path === docPath) return;
@@ -755,7 +756,7 @@ function renderDocRow(
     const newOrder = reorderArray(current, activeDrag.path, docPath, insertAfter);
     activeDrag = null;
     await opts.plugin.index.updateSidebarOrder({ ...stored, children: { ...stored.children, [parentPath]: newOrder } });
-  });
+  }));
 }
 
 // ---------- Favorites ----------
@@ -827,11 +828,11 @@ function renderFavReorder(row: HTMLElement, path: string, index: number, total: 
   const upBtn = reorderActions.createEl("button", { cls: "it-icon-btn it-icon-btn-mini", attr: { "aria-label": t("sidebar.moveFavUp") } });
   setIcon(upBtn, "chevron-up");
   if (index === 0) upBtn.addClass("is-disabled");
-  upBtn.addEventListener("click", async (e) => { e.stopPropagation(); if (index === 0) return; await opts.plugin.index.moveFavorite(path, loc, -1); });
+  upBtn.addEventListener("click", fireAndForget(async (e) => { e.stopPropagation(); if (index === 0) return; await opts.plugin.index.moveFavorite(path, loc, -1); }));
   const downBtn = reorderActions.createEl("button", { cls: "it-icon-btn it-icon-btn-mini", attr: { "aria-label": t("sidebar.moveFavDown") } });
   setIcon(downBtn, "chevron-down");
   if (index === total - 1) downBtn.addClass("is-disabled");
-  downBtn.addEventListener("click", async (e) => { e.stopPropagation(); if (index === total - 1) return; await opts.plugin.index.moveFavorite(path, loc, 1); });
+  downBtn.addEventListener("click", fireAndForget(async (e) => { e.stopPropagation(); if (index === total - 1) return; await opts.plugin.index.moveFavorite(path, loc, 1); }));
 }
 
 function renderFavMore(row: HTMLElement, items: import("../ui/menu").MenuItem[]) {
@@ -860,7 +861,7 @@ function attachFavDrag(row: HTMLElement, path: string, opts: SidebarOptions, loc
     row.addClass("is-drag-over");
   });
   row.addEventListener("dragleave", () => row.removeClass("is-drag-over"));
-  row.addEventListener("drop", async (e) => {
+  row.addEventListener("drop", fireAndForget(async (e) => {
     e.preventDefault();
     row.removeClass("is-drag-over");
     if (!activeDrag || activeDrag.kind !== "favorite" || activeDrag.parentPath !== tag || activeDrag.path === path) return;
@@ -869,7 +870,7 @@ function attachFavDrag(row: HTMLElement, path: string, opts: SidebarOptions, loc
     const draggedPath = activeDrag.path;
     activeDrag = null;
     await opts.plugin.index.reorderFavorites(draggedPath, path, insertAfter, loc);
-  });
+  }));
 }
 
 function renderFavoriteViewRow(

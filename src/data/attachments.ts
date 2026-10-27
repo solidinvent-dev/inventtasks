@@ -13,7 +13,7 @@
 // collision is detected at upload time.
 
 import { TFile, TFolder, normalizePath } from "obsidian";
-import type { TaskAttachment } from "../types";
+import type { TaskAttachment, TaskData } from "../types";
 import type { WorkspaceIndex } from "./workspace-index";
 import { appendActivity } from "./activity";
 
@@ -69,7 +69,7 @@ export function resolveCoverUrl(idx: WorkspaceIndex, value: string | undefined):
   if (!value) return "";
   if (value.startsWith("color:")) return "";
   if (/^(https?:|data:|app:|blob:)/i.test(value)) return value;
-  try { return (idx.app.vault.adapter as any).getResourcePath(value) || value; } catch { return value; }
+  try { return idx.app.vault.adapter.getResourcePath(value) || value; } catch { return value; }
 }
 
 export function coverColorValue(value: string | undefined): string | undefined {
@@ -92,9 +92,9 @@ async function ensureFolder(idx: WorkspaceIndex, path: string): Promise<void> {
   const af = idx.app.vault.getAbstractFileByPath(path);
   if (af instanceof TFolder) return;
   if (af) throw new Error(`Path exists but is not a folder: ${path}`);
-  await idx.app.vault.createFolder(path).catch((e: any) => {
+  await idx.app.vault.createFolder(path).catch((e: unknown) => {
     // Race: another writer created it between check and create — fine.
-    if (!/already exists/i.test(String(e?.message ?? e))) throw e;
+    if (!/already exists/i.test(String((e as Error | undefined)?.message ?? (e as Error | undefined)))) throw e;
   });
 }
 
@@ -206,7 +206,7 @@ export async function copyAllAttachmentsForTask(
   sourceTaskId: string,
   targetTaskId: string,
 ): Promise<void> {
-  const adapter: any = idx.app.vault.adapter;
+  const adapter = idx.app.vault.adapter;
   const sourceDir = taskAttachmentsDir(idx, sourceTaskId);
   if (!adapter?.exists || !(await adapter.exists(sourceDir))) return;
 
@@ -243,7 +243,7 @@ export async function addMainAttachments(idx: WorkspaceIndex, taskId: string, fi
     const att = await uploadAttachment(idx, taskId, MAIN_BUCKET, f);
     uploaded.push(att);
   }
-  await idx.updateTask(taskId, (d) => {
+  await idx.updateTask(taskId, (d: TaskData) => {
     const next = [...(d.attachments ?? []), ...uploaded];
     let activity = d.activity;
     for (const a of uploaded) {
@@ -260,8 +260,8 @@ export async function removeMainAttachment(idx: WorkspaceIndex, taskId: string, 
   if (!att) return;
   await deleteAttachmentFile(idx, taskId, att);
   const oldCoverPath = resolveAttachmentVaultPath(idx, taskId, att);
-  await idx.updateTask(taskId, (d) => {
-    const next = ((d.attachments ?? []) as TaskAttachment[]).filter((a) => a.path !== attPath);
+  await idx.updateTask(taskId, (d: TaskData) => {
+    const next = (d.attachments ?? []).filter((a) => a.path !== attPath);
     return {
       data: {
         ...d,
@@ -289,7 +289,7 @@ export async function renameMainAttachment(
   const oldCoverPath = resolveAttachmentVaultPath(idx, taskId, att);
   const renamed = await renameAttachmentFile(idx, taskId, MAIN_BUCKET, att, desiredName);
   const newCoverPath = resolveAttachmentVaultPath(idx, taskId, renamed);
-  await idx.updateTask(taskId, (d) => ({
+  await idx.updateTask(taskId, (d: TaskData) => ({
     data: {
       ...d,
       attachments: (d.attachments ?? []).map((a: TaskAttachment) => a.path === attPath ? renamed : a),
@@ -318,9 +318,9 @@ export async function addCfAttachments(
     const att = await uploadAttachment(idx, taskId, cfBucket(fieldId), f);
     uploaded.push(att);
   }
-  await idx.updateTask(taskId, (d) => {
+  await idx.updateTask(taskId, (d: TaskData) => {
     const cf = { ...(d.custom_fields ?? {}) };
-    const current: TaskAttachment[] = Array.isArray(cf[fieldId]) ? cf[fieldId] : [];
+    const current: TaskAttachment[] = Array.isArray(cf[fieldId]) ? cf[fieldId] as TaskAttachment[] : [];
     cf[fieldId] = [...current, ...uploaded];
     let activity = d.activity;
     for (const a of uploaded) {
@@ -339,12 +339,12 @@ export async function removeCfAttachment(
   const tf = idx.tasksById.get(taskId);
   if (!tf) return;
   const list: TaskAttachment[] = Array.isArray(tf.data.custom_fields?.[fieldId])
-    ? (tf.data.custom_fields![fieldId] as TaskAttachment[])
+    ? (tf.data.custom_fields[fieldId] as TaskAttachment[])
     : [];
   const att = list.find((a) => a.path === attPath);
   if (!att) return;
   await deleteAttachmentFile(idx, taskId, att);
-  await idx.updateTask(taskId, (d) => {
+  await idx.updateTask(taskId, (d: TaskData) => {
     const cf = { ...(d.custom_fields ?? {}) };
     const next = list.filter((a) => a.path !== attPath);
     if (next.length === 0) delete cf[fieldId];
@@ -369,14 +369,14 @@ export async function renameCfAttachment(
   const tf = idx.tasksById.get(taskId);
   if (!tf) return;
   const list: TaskAttachment[] = Array.isArray(tf.data.custom_fields?.[fieldId])
-    ? (tf.data.custom_fields![fieldId] as TaskAttachment[])
+    ? (tf.data.custom_fields[fieldId] as TaskAttachment[])
     : [];
   const att = list.find((a) => a.path === attPath);
   if (!att) return;
   const renamed = await renameAttachmentFile(idx, taskId, cfBucket(fieldId), att, desiredName);
-  await idx.updateTask(taskId, (d) => {
+  await idx.updateTask(taskId, (d: TaskData) => {
     const cf = { ...(d.custom_fields ?? {}) };
-    const current: TaskAttachment[] = Array.isArray(cf[fieldId]) ? cf[fieldId] : [];
+    const current: TaskAttachment[] = Array.isArray(cf[fieldId]) ? cf[fieldId] as TaskAttachment[] : [];
     cf[fieldId] = current.map((a) => a.path === attPath ? renamed : a);
     return {
       data: {
@@ -406,6 +406,6 @@ export function humanFileSize(bytes: number | undefined): string {
 export function openAttachmentInDefaultApp(idx: WorkspaceIndex, taskId: string, att: TaskAttachment): void {
   const path = resolveAttachmentVaultPath(idx, taskId, att);
   // `openWithDefaultApp` is on the App prototype in current Obsidian
-  // versions but not in the typed surface — cast to any.
-  (idx.app as any).openWithDefaultApp?.(path);
+  // versions but not in the typed surface — cast to a local shape.
+  (idx.app as unknown as { openWithDefaultApp?: (path: string) => void }).openWithDefaultApp?.(path);
 }

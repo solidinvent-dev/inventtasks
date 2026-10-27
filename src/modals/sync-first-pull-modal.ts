@@ -40,7 +40,7 @@ export class SyncFirstPullModal extends Modal {
       const row = c.createDiv({ cls: "it-bootstrap-option" });
       const btn = row.createEl("button", { text: label, cls });
       btn.addEventListener("click", () => this.choose(choice));
-      row.createEl("div", { cls: "it-bootstrap-option-desc", text: desc });
+      row.createDiv({ cls: "it-bootstrap-option-desc", text: desc });
     };
 
     option(t("sync.firstPullDownload"), t("sync.firstPullDownloadDesc"), "pull", "it-btn-primary");

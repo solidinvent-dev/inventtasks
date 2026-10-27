@@ -49,7 +49,7 @@ export function makeVaultSyncSettings(partial?: Partial<VaultSyncSettings>): Vau
     syncObsidianConfig: partial?.syncObsidianConfig ?? false,
     syncObsidianPlugins: partial?.syncObsidianPlugins ?? false,
     ignorePatterns: Array.isArray(partial?.ignorePatterns)
-      ? partial!.ignorePatterns.filter((p): p is string => typeof p === "string")
+      ? partial.ignorePatterns.filter((p): p is string => typeof p === "string")
       : [],
     maxFileMB: clamp(partial?.maxFileMB, 0, 1024, 0),
   };

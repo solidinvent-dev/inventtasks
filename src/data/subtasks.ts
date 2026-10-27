@@ -75,7 +75,7 @@ export function isDescendantOf(
   while (cur && !seen.has(cur)) {
     seen.add(cur);
     if (cur === ancestorId) return true;
-    cur = parentTaskIds(tasksById.get(cur)?.data ?? ({} as any))[0];
+    cur = parentTaskIds(tasksById.get(cur)?.data ?? {})[0];
   }
   return false;
 }
@@ -90,7 +90,7 @@ export const SUBTASK_MODES: { value: SubtaskMode; label: string; icon: string; d
 // collapses to "parents" semantics (see header).
 const NESTABLE = new Set(["list", "table", "gantt"]);
 
-export function normalizeSubtaskMode(v: any): SubtaskMode {
+export function normalizeSubtaskMode(v: unknown): SubtaskMode {
   if (v === "parents" || v === "nested" || v === "flat") return v;
   return DEFAULT_SUBTASK_MODE;
 }

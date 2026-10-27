@@ -38,7 +38,7 @@ export const CUSTOM_FIELD_TYPE_META: Record<CustomFieldType, CustomFieldTypeMeta
   attachment:      { label: "Attachment",           icon: "paperclip",          color: "#6D4C41" },
 };
 export function customFieldTypeMeta(type: string | undefined): CustomFieldTypeMeta {
-  const base = (type && (CUSTOM_FIELD_TYPE_META as any)[type]) || { label: type || "Field", icon: "circle", color: "#9E9E9E" };
+  const base = (type && (CUSTOM_FIELD_TYPE_META as Partial<Record<string, CustomFieldTypeMeta>>)[type]) || { label: type || "Field", icon: "circle", color: "#9E9E9E" };
   return { ...base, label: customFieldTypeLabel(type) || base.label };
 }
 
@@ -117,7 +117,7 @@ export const VIEW_TYPE_INVENTTASKS_FAVORITES = "inventtasks-favorites";
 
 // Single source shared with the External API server (shared/config-defaults.ts)
 // so plugin views and API labels/validation resolve identical built-ins.
-export const DEFAULT_PRIORITIES: PriorityDef[] = SHARED_DEFAULT_PRIORITIES as PriorityDef[];
+export const DEFAULT_PRIORITIES: PriorityDef[] = SHARED_DEFAULT_PRIORITIES;
 
 export const DEFAULT_CONTEXT_LABELS: ContextLabelDef[] = [
   { name: "PRIV", color: "#9C27B0" },
@@ -125,14 +125,14 @@ export const DEFAULT_CONTEXT_LABELS: ContextLabelDef[] = [
   { name: "BUSINESS", color: "#2196F3" },
 ];
 
-export const DEFAULT_TASK_TYPES: TaskType[] = SHARED_DEFAULT_TASK_TYPES as TaskType[];
+export const DEFAULT_TASK_TYPES: TaskType[] = SHARED_DEFAULT_TASK_TYPES;
 
 // ---------- Default status templates ----------
 
 export const STATUS_TEMPLATES: Record<string, StatusDef[]> = {
   // kanban is the shared built-in default (shared/config-defaults.ts) — the
   // API server seeds/validates with the same set.
-  kanban: SHARED_DEFAULT_STATUS_SET as StatusDef[],
+  kanban: SHARED_DEFAULT_STATUS_SET,
   scrum: [
     { id: "backlog", name: "Backlog", group: "not_started", color: "#9E9E9E", order: 0, is_default: true },
     { id: "todo", name: "To Do", group: "active", color: "#2196F3", order: 1 },

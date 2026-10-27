@@ -111,7 +111,7 @@ export async function makeStatusRequest(
 /** Parse+verify one stored/received statement. `verify` injectable for tests. */
 export function parseStamp(raw: unknown, verify: (p: string, s: string) => boolean = verifyVendorSignature): Stamp | null {
   try {
-    const obj = typeof raw === "string" ? JSON.parse(atob(raw)) : raw;
+    const obj = (typeof raw === "string" ? JSON.parse(atob(raw)) : raw) as { p?: unknown; s?: unknown } | null | undefined;
     if (!obj || typeof obj.p !== "string" || typeof obj.s !== "string") return null;
     const v2 = STAMP_V2_RE.exec(obj.p);
     const m = v2 ?? STAMP_V1_RE.exec(obj.p);

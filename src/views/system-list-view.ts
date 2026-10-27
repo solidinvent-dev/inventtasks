@@ -1,6 +1,6 @@
 import { App, Component, MarkdownRenderer, Modal, Notice, setIcon } from "obsidian";
 import type InventTasksPlugin from "../main";
-import type { CommentEntry, TaskFile } from "../types";
+import type { CommentEntry, PriorityId, ResolvedChipStyles, TaskData, TaskFile } from "../types";
 import type { SystemListKind } from "../data/workspace-index";
 import { ConfirmModal } from "../modals/confirm-modal";
 import { MoveTaskModal } from "../modals/move-modal";
@@ -17,6 +17,7 @@ import { fieldLabelFrom, t } from "../i18n";
 import { formatDate } from "../utils/dates";
 import { renderDateTimeInput } from "../ui/datetime-field";
 import { notificationHasTime, notificationSeverityForDate, notificationSortDateTimeKey } from "./notifications-view";
+import { fireAndForget } from "../utils/async";
 
 export type SystemViewKind = SystemListKind;
 
@@ -131,10 +132,10 @@ export function renderSystemListView(opts: RenderSystemListViewOptions) {
         title: t("system.deleteTitle"),
         message: t("system.deleteMsg", { title: task.data.title || t("common.untitled") }),
         destructive: true,
-        onConfirm: async () => {
+        onConfirm: fireAndForget(async () => {
           await plugin.index.deleteTask(task.data.id);
           opts.rerender();
-        },
+        }),
       }).open();
     });
   }
@@ -211,13 +212,13 @@ export class SystemItemModal extends Modal {
     this.onSaved();
   }
 
-  private async patch(fn: (data: any, body: string) => { data: any; body?: string } | void) {
+  private async patch(fn: (data: TaskData, body: string) => { data: Partial<TaskData>; body?: string } | void) {
     if (!this.task) return;
     try {
       await this.plugin.index.updateTask(this.task.data.id, fn);
       this.onSaved();
-    } catch (e: any) {
-      new Notice(t("task.notice.updateFailed", { msg: e.message }));
+    } catch (e) {
+      new Notice(t("task.notice.updateFailed", { msg: (e as Error).message }));
     }
   }
 
@@ -256,11 +257,11 @@ export class SystemItemModal extends Modal {
         title: t("task.confirm.deleteTitle"),
         message: t("task.confirm.deleteMsg", { title: data.title || t("common.untitled") }),
         destructive: true,
-        onConfirm: async () => {
+        onConfirm: fireAndForget(async () => {
           await this.plugin.index.deleteTask(data.id);
           this.onSaved();
           this.close();
-        },
+        }),
       }).open();
     });
 
@@ -269,14 +270,14 @@ export class SystemItemModal extends Modal {
     const titleEl = c.createEl("input", { type: "text", cls: "it-task-title-input" });
     titleEl.value = data.title || "";
     titleEl.placeholder = t("task.titlePlaceholder");
-    titleEl.addEventListener("change", async () => {
+    titleEl.addEventListener("change", fireAndForget(async () => {
       const next = titleEl.value.trim() || t("common.untitled");
       if (next !== data.title) {
         await this.patch((d) => ({
           data: { ...d, title: next, type: type.id, activity: appendActivity(d.activity, { kind: "title", from: d.title, to: next }) },
         }));
       }
-    });
+    }));
 
     this.renderDescriptionSection(c);
 
@@ -289,7 +290,7 @@ export class SystemItemModal extends Modal {
           parent: root,
           current: data.status,
           items: statusSet.map((s) => ({ value: s.id, label: s.name, color: s.color })),
-          onSelect: async (value) => {
+          onSelect: fireAndForget(async (value) => {
             document.querySelectorAll(".it-popover").forEach((el) => el.remove());
             const so = statusSet.find((s) => s.id === value);
             await this.patch((d) => ({
@@ -301,7 +302,7 @@ export class SystemItemModal extends Modal {
                 activity: appendActivity(d.activity, { kind: "status", from: d.status ?? null, to: value }),
               },
             }));
-          },
+          }),
         });
       });
     }, chipStyles);
@@ -309,19 +310,19 @@ export class SystemItemModal extends Modal {
     renderFieldIcon(bar, "priority");
     priorityChip(bar, data.priority, priorities, (e) => {
       showPopover(e.currentTarget as HTMLElement, (root) => {
-        buildDropdown({
+        buildDropdown<PriorityId | null>({
           parent: root,
           current: data.priority,
           items: [
-            ...priorities.map((p) => ({ value: p.id as any, label: p.label, color: p.color })),
-            { value: null as any, label: t("task.header.noPriority"), color: "#9E9E9E" },
+            ...priorities.map((p) => ({ value: p.id, label: p.label, color: p.color })),
+            { value: null, label: t("task.header.noPriority"), color: "#9E9E9E" },
           ],
-          onSelect: async (value) => {
+          onSelect: fireAndForget(async (value) => {
             await this.patch((d) => ({
               data: { ...d, priority: value ?? null, type: type.id, activity: appendActivity(d.activity, { kind: "priority", from: d.priority ?? null, to: value ?? null }) },
             }));
             document.querySelectorAll(".it-popover").forEach((el) => el.remove());
-          },
+          }),
         });
       });
     }, chipStyles);
@@ -376,7 +377,7 @@ export class SystemItemModal extends Modal {
     return lbl;
   }
 
-  private renderTagsSection(parent: HTMLElement, chipStyles: any) {
+  private renderTagsSection(parent: HTMLElement, chipStyles: ResolvedChipStyles) {
     if (!this.task) return;
     const task = this.task;
     const sec = parent.createDiv({ cls: "it-section" });
@@ -392,10 +393,10 @@ export class SystemItemModal extends Modal {
       for (const tag of task.data.tags || []) {
         const chip = tagChip(list, tag, colorMap.get(tag), undefined, chipStyles);
         const remove = chip.createSpan({ text: "×", cls: "it-tag-remove" });
-        remove.addEventListener("click", async (ev) => {
+        remove.addEventListener("click", fireAndForget(async (ev) => {
           ev.stopPropagation();
           await this.patch((d) => ({ data: { ...d, tags: (d.tags || []).filter((x: string) => x !== tag) } }));
-        });
+        }));
       }
       const add = list.createEl("button", { cls: "it-chip it-chip-add", text: t("task.tags.add") });
       add.addEventListener("click", () => {
@@ -410,21 +411,21 @@ export class SystemItemModal extends Modal {
               const row = results.createEl("button", { cls: "it-tag-picker-item" + (current.has(tag.name) ? " is-active" : "") });
               row.style.setProperty("--chip-color", tag.color);
               row.createSpan({ text: "#" + tag.name, cls: "it-tag-picker-name" });
-              row.addEventListener("mousedown", async (ev) => {
+              row.addEventListener("mousedown", fireAndForget(async (ev) => {
                 ev.preventDefault();
                 ev.stopPropagation();
                 const next = current.has(tag.name) ? (task.data.tags || []).filter((x) => x !== tag.name) : [...(task.data.tags || []), tag.name];
                 await this.patch((d) => ({ data: { ...d, tags: next } }));
-              });
+              }));
             }
             const raw = input.value.trim();
             if (raw && !current.has(raw) && !palette.some((p) => p.name.toLowerCase() === raw.toLowerCase())) {
               const row = results.createEl("button", { cls: "it-tag-picker-item it-tag-picker-add", text: t("task.tags.addNamed", { name: raw }) });
-              row.addEventListener("mousedown", async (ev) => {
+              row.addEventListener("mousedown", fireAndForget(async (ev) => {
                 ev.preventDefault();
                 ev.stopPropagation();
                 await this.patch((d) => ({ data: { ...d, tags: [...(d.tags || []), raw] } }));
-              });
+              }));
             }
           };
           input.addEventListener("input", refresh);
@@ -436,7 +437,7 @@ export class SystemItemModal extends Modal {
     render();
   }
 
-  private renderContextSection(parent: HTMLElement, chipStyles: any) {
+  private renderContextSection(parent: HTMLElement, chipStyles: ResolvedChipStyles) {
     if (!this.task) return;
     const task = this.task;
     const sec = parent.createDiv({ cls: "it-section" });
@@ -453,19 +454,19 @@ export class SystemItemModal extends Modal {
       chip.style.setProperty("--chip-color", label.color);
       applyChipStyleByKind(chip, "context", chipStyles);
       chip.setText(label.name);
-      chip.addEventListener("click", async () => {
+      chip.addEventListener("click", fireAndForget(async () => {
         const next = active ? (task.data.context || []).filter((x) => x !== label.name) : [...(task.data.context || []), label.name];
         await this.patch((d) => ({ data: { ...d, context: next } }));
-      });
+      }));
     }
     for (const extra of task.data.context || []) {
       if (labels.some((label) => label.name === extra)) continue;
       const chip = list.createEl("button", { cls: "it-chip it-chip-tag is-active", text: extra });
       const remove = chip.createSpan({ text: "×", cls: "it-tag-remove" });
-      remove.addEventListener("click", async (ev) => {
+      remove.addEventListener("click", fireAndForget(async (ev) => {
         ev.stopPropagation();
         await this.patch((d) => ({ data: { ...d, context: (d.context || []).filter((x: string) => x !== extra) } }));
-      });
+      }));
     }
   }
 
@@ -496,9 +497,9 @@ export class SystemItemModal extends Modal {
         source: { id: task.data.id, title: task.data.title || t("common.untitled"), icon: task.data.icon, color: task.data.color },
         contextLabel: t("task.relationships.linkContext", { label: t("task.relationships.related"), inverse: t("task.relationships.related") }),
         confirmLabel: t("task.picker.link"),
-        onPick: async (picked) => {
+        onPick: fireAndForget(async (picked) => {
           for (const id of picked) await addRelated(this.plugin.index, task.data.id, id);
-        },
+        }),
       }).open();
     });
     const items = group.createDiv({ cls: "it-rel-items" });
@@ -516,16 +517,16 @@ export class SystemItemModal extends Modal {
         });
       }
       const remove = chip.createSpan({ text: "×", cls: "it-tag-remove" });
-      remove.addEventListener("click", async (ev) => {
+      remove.addEventListener("click", fireAndForget(async (ev) => {
         ev.stopPropagation();
         new ConfirmModal(this.app, {
           title: t("modal.deleteConfirm"),
           message: t("task.relationships.related"),
           destructive: true,
           confirmLabel: t("common.remove"),
-          onConfirm: () => removeRelated(this.plugin.index, task.data.id, id),
+          onConfirm: () => void removeRelated(this.plugin.index, task.data.id, id),
         }).open();
-      });
+      }));
     }
   }
 
@@ -547,14 +548,14 @@ export class SystemItemModal extends Modal {
         source: { title: task.data.title || t("common.untitled"), icon: task.data.icon, color: task.data.color },
         contextLabel: t("task.documents.pickerContext"),
         confirmLabel: t("task.picker.link"),
-        onPick: async (picked) => {
+        onPick: fireAndForget(async (picked) => {
           await this.patch((d) => {
             const cur: string[] = Array.isArray(d.documents) ? d.documents : [];
             const next = [...cur];
             for (const id of picked) if (!next.includes(id)) next.push(id);
             return { data: { ...d, documents: next } };
           });
-        },
+        }),
       }).open();
     });
     const list = sec.createDiv({ cls: "it-subtasks-list" });
@@ -568,12 +569,12 @@ export class SystemItemModal extends Modal {
       if (doc?.__path) title.addEventListener("click", () => this.openLinkedDoc(doc.__path!));
       const remove = row.createEl("button", { cls: "it-icon-btn it-icon-btn-mini it-subtask-remove", attr: { "aria-label": t("task.documents.remove") } });
       setIcon(remove, "x");
-      remove.addEventListener("click", async () => {
+      remove.addEventListener("click", fireAndForget(async () => {
         await this.patch((d) => {
-          const next = ((d.documents || []) as string[]).filter((x) => x !== id);
+          const next = (d.documents || []).filter((x) => x !== id);
           return { data: { ...d, documents: next.length ? next : undefined } };
         });
-      });
+      }));
     }
   }
 
@@ -610,11 +611,11 @@ export class SystemItemModal extends Modal {
       area.rows = 12;
       area.placeholder = t("task.description.placeholder");
       const actions = sec.createDiv({ cls: "it-desc-actions" });
-      actions.createEl("button", { cls: "it-btn-primary", text: t("common.save") }).addEventListener("click", async () => {
+      actions.createEl("button", { cls: "it-btn-primary", text: t("common.save") }).addEventListener("click", fireAndForget(async () => {
         const next = area.value;
         this.descriptionEditing = false;
         await this.patch(() => ({ data: {}, body: next }));
-      });
+      }));
       toggle.addEventListener("click", () => {
         this.descriptionEditing = false;
         this.render();
@@ -667,7 +668,7 @@ export class SystemItemModal extends Modal {
           title: t("task.comments.deleteTitle"),
           message: t("task.comments.deleteMsg"),
           destructive: true,
-          onConfirm: () => removeComment(this.plugin.index, taskId, comment.id),
+          onConfirm: () => void removeComment(this.plugin.index, taskId, comment.id),
         }).open();
       });
       if (editing) {
@@ -675,12 +676,12 @@ export class SystemItemModal extends Modal {
         area.value = comment.text;
         area.rows = Math.max(3, Math.min(12, comment.text.split("\n").length + 1));
         const editActions = row.createDiv({ cls: "it-comment-actions" });
-        editActions.createEl("button", { cls: "it-btn-primary", text: t("common.save") }).addEventListener("click", async () => {
+        editActions.createEl("button", { cls: "it-btn-primary", text: t("common.save") }).addEventListener("click", fireAndForget(async () => {
           const text = area.value.trim();
           if (!text) return;
           this.editingCommentId = null;
           await editComment(this.plugin.index, taskId, comment.id, text);
-        });
+        }));
         editActions.createEl("button", { cls: "it-btn-ghost", text: t("common.cancel") }).addEventListener("click", () => {
           this.editingCommentId = null;
           this.render();
@@ -696,12 +697,12 @@ export class SystemItemModal extends Modal {
     area.placeholder = t("task.comments.placeholder");
     const addActions = addWrap.createDiv({ cls: "it-comment-actions" });
     const submit = addActions.createEl("button", { cls: "it-btn-primary it-add-comment-btn", text: t("task.comments.add") });
-    submit.addEventListener("click", async () => {
+    submit.addEventListener("click", fireAndForget(async () => {
       const text = area.value.trim();
       if (!text) return;
       await addComment(this.plugin.index, taskId, text);
       area.value = "";
-    });
+    }));
   }
 
 }

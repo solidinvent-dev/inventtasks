@@ -1,7 +1,7 @@
-import { App, Notice, TAbstractFile, TFile, normalizePath } from "obsidian";
+import { App, EventRef, Notice, TAbstractFile, TFile, normalizePath, arrayBufferToBase64, base64ToArrayBuffer } from "obsidian";
 import type InventTasksPlugin from "../main";
 import type { WorkspaceEntry } from "../settings";
-import { splitFrontmatter } from "./parsers";
+import { splitFrontmatter, type Frontmatter } from "./parsers";
 import { t } from "../i18n";
 import { sha256Hex } from "../sync/util";
 import { scalarText } from "../utils/text";
@@ -71,7 +71,7 @@ export interface BackupFileEntry {
   mtime?: number;
   sha256?: string;
   yamlError?: string;
-  frontmatter?: any;
+  frontmatter?: Frontmatter;
   body?: string;
   raw?: string;
   /**
@@ -95,7 +95,7 @@ export interface IncrementalBackupBundle {
   workspaceId: string;
   workspaceName: string;
   workspaceRoot: string;
-  pluginSettings: any;
+  pluginSettings: Record<string, unknown>;
   stats: {
     files: number;
     rawFiles: number;
@@ -130,7 +130,7 @@ interface BackupTarget {
 
 export class IncrementalBackupService {
   private plugin: InventTasksPlugin;
-  private eventRefs: any[] = [];
+  private eventRefs: EventRef[] = [];
   private snapshotTimers = new Map<string, number>();
   private journalTimers = new Map<string, number>();
   private pendingPaths = new Map<string, Set<string>>();
@@ -309,7 +309,7 @@ export class IncrementalBackupService {
     const target = await this.targetFor(ws);
     const chain: IncrementalBackupBundle[] = [];
     for (const summary of chainSummaries.sort((a, b) => a.createdAt.localeCompare(b.createdAt))) {
-      const bundle = summary.path === selectedPath ? selected : JSON.parse(await target.read(summary.path));
+      const bundle = summary.path === selectedPath ? selected : JSON.parse(await target.read(summary.path)) as IncrementalBackupBundle | null;
       if (bundle?.format === "inventtasks-incremental-backup") chain.push(bundle);
     }
     return chain.length ? chain : [selected];
@@ -450,7 +450,7 @@ export class IncrementalBackupService {
     if (!entry.frontmatter) return "";
     const lines = ["---", ...Object.entries(entry.frontmatter).map(([key, value]) => `${key}: ${JSON.stringify(value)}`), "---", ""];
     if (entry.body) lines.push(entry.body);
-    else lines.push(`# ${entry.frontmatter.title || entry.path.split("/").pop()?.replace(/\.md$/, "") || "Restored"}\n`);
+    else lines.push(`# ${(entry.frontmatter.title as string | undefined) || entry.path.split("/").pop()?.replace(/\.md$/, "") || "Restored"}\n`);
     return lines.join("\n");
   }
 
@@ -485,11 +485,11 @@ export class IncrementalBackupService {
     return out;
   }
 
-  private sanitizedSettingsFor(ws: WorkspaceEntry): any {
+  private sanitizedSettingsFor(ws: WorkspaceEntry): Record<string, unknown> {
     // notifConfig carries no secrets (the ntfy token lives in
     // the global accounts, which are not part of workspace backups); the
     // runtime notifState is transient and excluded.
-    const { notifState, ...rest } = ws as any;
+    const { notifState, ...rest } = ws;
     return {
       workspace: {
         ...rest,
@@ -693,23 +693,21 @@ export class IncrementalBackupService {
   }
 
   private async readVaultBinaryBase64(path: string): Promise<{ base64: string; sha256: string; byteLength: number } | undefined> {
-    const adapter: any = this.plugin.app.vault.adapter;
+    const adapter = this.plugin.app.vault.adapter as unknown as { readBinary?: (path: string) => Promise<ArrayBuffer> };
     if (!adapter.readBinary) return undefined;
     const data = await adapter.readBinary(path);
-    const buffer = Buffer.from(data);
-    return { base64: buffer.toString("base64"), sha256: await sha256Hex(new Uint8Array(data)), byteLength: buffer.byteLength };
+    return { base64: arrayBufferToBase64(data), sha256: await sha256Hex(new Uint8Array(data)), byteLength: data.byteLength };
   }
 
   private async writeVaultBinary(path: string, base64: string, existing?: TAbstractFile | null): Promise<void> {
-    const buffer = Buffer.from(base64, "base64");
-    const data = buffer.buffer.slice(buffer.byteOffset, buffer.byteOffset + buffer.byteLength);
+    const data = base64ToArrayBuffer(base64);
     if (existing instanceof TFile) await this.plugin.app.vault.modifyBinary(existing, data);
-    else if ((this.plugin.app.vault as any).createBinary) await (this.plugin.app.vault as any).createBinary(path, data);
-    else await (this.plugin.app.vault.adapter as any).writeBinary(path, data);
+    else if ((this.plugin.app.vault as unknown as { createBinary?: unknown }).createBinary) await this.plugin.app.vault.createBinary(path, data);
+    else await this.plugin.app.vault.adapter.writeBinary(path, data);
   }
 
-  private async recordError(ws: WorkspaceEntry, e: any): Promise<void> {
-    const message: string = e?.message || String(e);
+  private async recordError(ws: WorkspaceEntry, e: unknown): Promise<void> {
+    const message: string = (e as Error | undefined)?.message || String(e);
     ws.backup = { ...makeIncrementalBackupSettings(ws.backup), lastError: message };
     await this.plugin.saveSettings();
     new Notice(t("backup.failed", { msg: message }));
@@ -757,10 +755,10 @@ function escapeRegExp(value: string): string {
   return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 }
 
-function redactSecrets<T extends Record<string, any>>(value: T): T {
-  const out: any = { ...value };
+function redactSecrets<T extends object>(value: T): T {
+  const out = { ...value } as Record<string, unknown>;
   for (const key of ["clientSecret", "accessToken", "refreshToken", "password"]) {
     if (out[key]) out[key] = "[redacted]";
   }
-  return out;
+  return out as T;
 }

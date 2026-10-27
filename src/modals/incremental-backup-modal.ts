@@ -27,8 +27,8 @@ export class IncrementalBackupRestoreModal extends Modal {
     try {
       this.backups = await this.plugin.incrementalBackupService.listBackups(this.plugin.prefs);
       this.selectedPath = this.backups[0]?.path || "";
-    } catch (e: any) {
-      new Notice(t("backup.listFailed", { msg: e?.message ?? String(e) }));
+    } catch (e) {
+      new Notice(t("backup.listFailed", { msg: (e as Error | undefined)?.message ?? String(e) }));
       this.backups = [];
     }
   }
@@ -113,8 +113,8 @@ export class IncrementalBackupRestoreModal extends Modal {
         }), 15000);
       }
       this.close();
-    } catch (e: any) {
-      new Notice(t("backup.restoreFailed", { msg: e?.message ?? String(e) }));
+    } catch (e) {
+      new Notice(t("backup.restoreFailed", { msg: (e as Error | undefined)?.message ?? String(e) }));
       this.busy = false;
     }
   }

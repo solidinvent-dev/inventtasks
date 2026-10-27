@@ -6,11 +6,11 @@
 //     remapped task ids (parent_task, relationships, relationship custom
 //     fields, additional_lists) so the imported graph stays consistent.
 
-import { TFile, normalizePath } from "obsidian";
+import { TFile, normalizePath, base64ToArrayBuffer } from "obsidian";
 import { t } from "../i18n";
 import type InventTasksPlugin from "../main";
-import { TaskData, ViewConfig } from "../types";
-import { joinFrontmatter, serializeTask, splitFrontmatter } from "./parsers";
+import { TaskData, TaskRelationships, ViewConfig } from "../types";
+import { joinFrontmatter, serializeTask, splitFrontmatter, type Frontmatter } from "./parsers";
 import { SPACE_FILE, FOLDER_FILE, LIST_FILE, VIEWS_DIR, WORKSPACE_FILE, WORKSPACE_STATE_FILE } from "../constants";
 import { safeFileName, slugify } from "../utils/slug";
 import { BackupBundle, BackupSpace, BackupFolder, BackupList, BackupRawFile } from "./export";
@@ -30,7 +30,7 @@ export interface ImportDestination { spacePath?: string; folderPath?: string; li
 
 const rand4 = () => Math.floor(Math.random() * 10000).toString().padStart(4, "0");
 const rand6 = () => Math.random().toString(36).slice(2, 8).toUpperCase();
-const isTaskId = (s: any): s is string => typeof s === "string" && /^TSK-\d{5}$/.test(s);
+const isTaskId = (s: unknown): s is string => typeof s === "string" && /^TSK-\d{5}$/.test(s);
 
 function uniqueName(desired: string, taken: Set<string>): string {
   const untitled = t("common.untitled");
@@ -53,7 +53,7 @@ export async function importBackup(
   // The import path writes files directly (bypassing createList/createTask), so
   // the working-set budget is enforced here too, before anything is written.
   {
-    const open = (g: any) => g !== "done" && g !== "closed"; // only live tasks count
+    const open = (g: unknown) => g !== "done" && g !== "closed"; // only live tasks count
     const add = { lists: 0, tasks: 0 };
     const cl = (bl: BackupList) => { add.lists++; for (const tk of bl.tasks || []) if (open(tk.data?.status_group)) add.tasks++; };
     const cf = (bf: BackupFolder) => (bf.lists || []).forEach(cl);
@@ -131,7 +131,7 @@ export async function importBackup(
   };
   eachBundleTask((t) => { if (!idMap.has(t.id)) idMap.set(t.id, newTaskId()); });
 
-  const remapId = (old: any): string | undefined => (isTaskId(old) ? idMap.get(old) : undefined);
+  const remapId = (old: unknown): string | undefined => (isTaskId(old) ? idMap.get(old) : undefined);
   // Docs and pages carry their own ids, and importing a container copies its
   // `_docs/` verbatim. Left alone that produces two Docs with the SAME id in one
   // workspace: `docById` answers with whichever is found first, the other
@@ -142,11 +142,11 @@ export async function importBackup(
   const pageIdMap = new Map<string, string>();
   const isDocId = (v: unknown): v is string => typeof v === "string" && /^DOC-[A-Z0-9]+$/.test(v);
   const isPageId = (v: unknown): v is string => typeof v === "string" && /^PG-[A-Z0-9]+$/.test(v);
-  const mapDocRef = (v: any): any => {
+  const mapDocRef = (v: unknown): unknown => {
     if (isDocId(v)) return docIdMap.get(v) ?? v;
     if (isPageId(v)) return pageIdMap.get(v) ?? v;
     if (v && typeof v === "object" && !Array.isArray(v)) {
-      const o: any = { ...v };
+      const o = { ...v } as Record<string, unknown>;
       if (isDocId(o.doc_id)) o.doc_id = docIdMap.get(o.doc_id) ?? o.doc_id;
       if (isPageId(o.page_id)) o.page_id = pageIdMap.get(o.page_id) ?? o.page_id;
       return o;
@@ -154,29 +154,29 @@ export async function importBackup(
     return v;
   };
 
-  const remapCfValue = (v: any): any => {
+  const remapCfValue = (v: unknown): unknown => {
     if (isTaskId(v)) return idMap.get(v) ?? v;
     if (isDocId(v) || isPageId(v)) return mapDocRef(v);
-    if (Array.isArray(v)) return v.map((x) => (isTaskId(x) ? (idMap.get(x) ?? x) : mapDocRef(x)));
+    if (Array.isArray(v)) return (v as unknown[]).map((x) => (isTaskId(x) ? (idMap.get(x) ?? x) : mapDocRef(x)));
     if (v && typeof v === "object") return mapDocRef(v);
     return v;
   };
-  const remapTask = (data: TaskData): any => {
-    const d: any = { ...data };
+  const remapTask = (data: TaskData): TaskData => {
+    const d: TaskData = { ...data };
     d.id = idMap.get(data.id) || newTaskId();
     if (typeof d.parent_task === "string") d.parent_task = remapId(d.parent_task) ?? null;
-    else if (Array.isArray(d.parent_task)) d.parent_task = d.parent_task.map(remapId).filter(Boolean);
+    else if (Array.isArray(d.parent_task)) d.parent_task = d.parent_task.map(remapId).filter(Boolean) as string[];
     else d.parent_task = d.parent_task ?? null;
     if (d.relationships && typeof d.relationships === "object") {
-      const r: any = {};
-      if (Array.isArray(d.relationships.blocks)) r.blocks = d.relationships.blocks.map(remapId).filter(Boolean);
-      if (Array.isArray(d.relationships.related)) r.related = d.relationships.related.map(remapId).filter(Boolean);
+      const r: TaskRelationships = {};
+      if (Array.isArray(d.relationships.blocks)) r.blocks = d.relationships.blocks.map(remapId).filter(Boolean) as string[];
+      if (Array.isArray(d.relationships.related)) r.related = d.relationships.related.map(remapId).filter(Boolean) as string[];
       d.relationships = r;
     }
     if (Array.isArray(d.additional_lists)) d.additional_lists = d.additional_lists.map((p: string) => listPathMap.get(p) || p);
-    if (Array.isArray(d.documents)) d.documents = d.documents.map(mapDocRef);
+    if (Array.isArray(d.documents)) d.documents = d.documents.map(mapDocRef) as string[];
     if (d.custom_fields && typeof d.custom_fields === "object") {
-      const cf: any = {};
+      const cf: Record<string, unknown> = {};
       for (const [k, v] of Object.entries(d.custom_fields)) cf[k] = remapCfValue(v);
       d.custom_fields = cf;
     }
@@ -192,7 +192,7 @@ export async function importBackup(
     return root ? normalizePath(`${root}/${child}`) : child;
   };
   const relativeToImportRoot = (path: string): string => {
-    const srcRoot = (bundle.workspaceConfig as any)?.__root || "";
+    const srcRoot = (bundle.workspaceConfig as { __root?: string } | undefined)?.__root || "";
     const normalized = normalizePath(path);
     if (srcRoot && normalized.startsWith(`${srcRoot}/`)) return normalized.slice(srcRoot.length + 1);
     const marker = normalized.match(/(?:^|\/)(_templates|_docs|_attachments|_workspace(?:-state)?\.md)(?:\/|$)/);
@@ -235,7 +235,7 @@ export async function importBackup(
   const restampDoc = (data: string): string => {
     const { fm, body } = splitFrontmatter(data);
     if (!fm || typeof fm !== "object") return data;
-    const next: any = { ...fm };
+    const next: Frontmatter = { ...fm };
     if (isDocId(next.doc_id)) next.doc_id = docIdMap.get(next.doc_id) ?? next.doc_id;
     if (isPageId(next.page_id)) next.page_id = pageIdMap.get(next.page_id) ?? next.page_id;
     if (isPageId(next.parent_page)) next.parent_page = pageIdMap.get(next.parent_page) ?? next.parent_page;
@@ -250,12 +250,12 @@ export async function importBackup(
       if ((raw.kind === "workspace" || raw.kind === "workspace-state") && plugin.app.vault.getAbstractFileByPath(path)) continue;
       await ensureTrackedFolder(path.split("/").slice(0, -1).join("/"));
       if (raw.encoding === "base64") {
-        const bytes = Buffer.from(raw.data, "base64");
+        const bytes = base64ToArrayBuffer(raw.data);
         const existing = plugin.app.vault.getAbstractFileByPath(path);
         // Overwrite in place: replacing a file is not deleting it.
-        if (existing instanceof TFile) await plugin.app.vault.modifyBinary(existing, bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength));
-        else if ((plugin.app.vault as any).createBinary) await (plugin.app.vault as any).createBinary(path, bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength));
-        else await (plugin.app.vault.adapter as any).writeBinary(path, bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength));
+        if (existing instanceof TFile) await plugin.app.vault.modifyBinary(existing, bytes);
+        else if ((plugin.app.vault as unknown as { createBinary?: unknown }).createBinary) await plugin.app.vault.createBinary(path, bytes);
+        else await plugin.app.vault.adapter.writeBinary(path, bytes);
       } else {
         await writeTrackedFile(path, raw.kind === "doc" ? restampDoc(raw.data) : raw.data);
       }
@@ -270,7 +270,7 @@ export async function importBackup(
     const root = path && path !== "/" ? path : (plugin.index.rootPath && plugin.index.rootPath !== "/" ? plugin.index.rootPath : "");
     const viewsDir = root ? `${root}/${VIEWS_DIR}` : VIEWS_DIR;
     await ensureTrackedFolder(viewsDir);
-    const nv: any = { ...v, view_id: `VW-${rand6()}`, location: locationKey };
+    const nv: ViewConfig = { ...v, view_id: `VW-${rand6()}`, location: locationKey };
     delete nv.__path;
     const fileName = `view-${slugify(v.name) || "view"}-${nv.view_id.toLowerCase()}.md`;
     await writeTrackedFile(normalizePath(`${viewsDir}/${fileName}`), joinFrontmatter(nv, `\n# ${v.name}\n\n${v.description ?? ""}\n`));
@@ -289,7 +289,7 @@ export async function importBackup(
     if (listName !== desired) res.renamed.push({ type: "list", from: desired, to: listName });
     const dirPath = `${parentDir}/${safeFileName(`List - ${listName}`)}`;
     await ensureTrackedFolder(dirPath);
-    const config: any = { ...bl.config, name: listName, list_id: `LST-${rand4()}` };
+    const config = { ...bl.config, name: listName, list_id: `LST-${rand4()}` };
     await writeTrackedFile(`${dirPath}/${LIST_FILE}`, joinFrontmatter(config, `\n# ${listName}\n\n${config.description || ""}\n`));
     res.lists++;
     listPathMap.set(bl.srcPath, dirPath);
@@ -303,7 +303,7 @@ export async function importBackup(
     if (folderName !== desired) res.renamed.push({ type: "folder", from: desired, to: folderName });
     const dirPath = `${spaceDir}/${safeFileName(`Folder - ${folderName}`)}`;
     await ensureTrackedFolder(dirPath);
-    const config: any = { ...bf.config, name: folderName, folder_id: `FLD-${rand4()}` };
+    const config = { ...bf.config, name: folderName, folder_id: `FLD-${rand4()}` };
     await writeTrackedFile(`${dirPath}/${FOLDER_FILE}`, joinFrontmatter(config, `\n# ${folderName}\n`));
     res.folders++;
     folderPathMap.set(bf.srcPath, dirPath);
@@ -319,7 +319,7 @@ export async function importBackup(
     const baseDir = rootDir && rootDir !== "/" ? rootDir : "";
     const dirPath = baseDir ? `${baseDir}/${safeFileName(`Space - ${spaceName}`)}` : safeFileName(`Space - ${spaceName}`);
     await ensureTrackedFolder(dirPath);
-    const config: any = { ...bs.config, name: spaceName, space_id: `SPC-${rand4()}` };
+    const config = { ...bs.config, name: spaceName, space_id: `SPC-${rand4()}` };
     await writeTrackedFile(`${dirPath}/${SPACE_FILE}`, joinFrontmatter(config, `\n# ${spaceName}\n`));
     res.spaces++;
     spacePathMap.set(bs.srcPath, dirPath);

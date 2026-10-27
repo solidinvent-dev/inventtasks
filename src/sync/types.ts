@@ -98,7 +98,7 @@ export function loadSyncState(raw: unknown, deviceName: string): SyncStateFile {
     deviceId: data.deviceId,
     deviceName: data.deviceName || deviceName,
     cursor: typeof data.cursor === "number" && data.cursor >= 0 ? Math.floor(data.cursor) : 0,
-    manifest: data.manifest && typeof data.manifest === "object" ? data.manifest as Record<string, SyncManifestEntry> : {},
+    manifest: data.manifest && typeof data.manifest === "object" ? data.manifest : {},
   };
 }
 

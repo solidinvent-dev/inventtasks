@@ -2,7 +2,7 @@
 // stored as a JSON array in a task's frontmatter under `comments`. Each
 // operation is a single-file updateTask + folded activity log entry.
 
-import type { CommentEntry } from "../types";
+import type { CommentEntry, TaskData } from "../types";
 import type { WorkspaceIndex } from "./workspace-index";
 import { appendActivity } from "./activity";
 
@@ -23,7 +23,7 @@ export async function addComment(idx: WorkspaceIndex, taskId: string, text: stri
     text: trimmed,
     created_at: new Date().toISOString(),
   };
-  await idx.updateTask(taskId, (d) => ({
+  await idx.updateTask(taskId, (d: TaskData) => ({
     data: {
       ...d,
       comments: [...(d.comments ?? []), entry],
@@ -35,7 +35,7 @@ export async function addComment(idx: WorkspaceIndex, taskId: string, text: stri
 export async function editComment(idx: WorkspaceIndex, taskId: string, commentId: string, newText: string): Promise<void> {
   const trimmed = newText.trim();
   if (!trimmed) return;
-  await idx.updateTask(taskId, (d) => {
+  await idx.updateTask(taskId, (d: TaskData) => {
     const list: CommentEntry[] = d.comments ?? [];
     const next = list.map((c) => c.id === commentId ? { ...c, text: trimmed, updated_at: new Date().toISOString() } : c);
     return {
@@ -49,7 +49,7 @@ export async function editComment(idx: WorkspaceIndex, taskId: string, commentId
 }
 
 export async function removeComment(idx: WorkspaceIndex, taskId: string, commentId: string): Promise<void> {
-  await idx.updateTask(taskId, (d) => {
+  await idx.updateTask(taskId, (d: TaskData) => {
     const list: CommentEntry[] = d.comments ?? [];
     const target = list.find((c) => c.id === commentId);
     const next = list.filter((c) => c.id !== commentId);
@@ -77,7 +77,7 @@ export async function moveComment(
   commentId: string,
   direction: "up" | "down",
 ): Promise<void> {
-  await idx.updateTask(taskId, (d) => {
+  await idx.updateTask(taskId, (d: TaskData) => {
     const list: CommentEntry[] = (d.comments ?? []).slice();
     const i = list.findIndex((c) => c.id === commentId);
     if (i < 0) return;

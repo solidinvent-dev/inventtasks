@@ -85,7 +85,7 @@ export class FilterModal extends Modal {
       conditions: (g.conditions || []).map((c) =>
         this.isChildGroup(c)
           ? this.cloneGroup(c)!
-          : { ...(c as FilterCondition), value: Array.isArray((c as FilterCondition).value) ? [...(c as FilterCondition).value] : (c as FilterCondition).value }
+          : { ...(c), value: Array.isArray((c).value) ? [...((c).value as unknown[])] : (c).value }
       ),
     };
   }
@@ -102,7 +102,7 @@ export class FilterModal extends Modal {
       if (this.isChildGroup(ch)) {
         const pg = this.pruneGroup(ch);
         if (pg && pg.conditions.length) kept.push(pg);
-      } else if (this.fieldFor((ch as FilterCondition).field)) {
+      } else if (this.fieldFor((ch).field)) {
         kept.push(ch);
       }
     }
@@ -182,7 +182,7 @@ export class FilterModal extends Modal {
       group.conditions.forEach((child, i) => {
         const remove = () => { group.conditions.splice(i, 1); this.render(); };
         if (this.isChildGroup(child)) this.renderGroup(body, child, false, depth + 1, remove);
-        else this.renderConditionRow(body, child as FilterCondition, remove);
+        else this.renderConditionRow(body, child, remove);
       });
     }
 
@@ -260,7 +260,7 @@ export class FilterModal extends Modal {
     rm.addEventListener("click", () => removeSelf());
   }
 
-  private defaultValue(op: string, field: FilterFieldDef): any {
+  private defaultValue(op: string, field: FilterFieldDef): unknown {
     const kind = valueKind(op, field);
     switch (kind) {
       case "none": return null;
@@ -281,14 +281,15 @@ export class FilterModal extends Modal {
         return;
       case "text": {
         const i = parent.createEl("input", { type: "text", cls: "it-input" });
-        i.value = cond.value ?? "";
+        i.value = (cond.value as string | undefined) ?? "";
         i.placeholder = t("common.value");
         i.addEventListener("input", () => { cond.value = i.value; });
         return;
       }
       case "number": {
         const i = parent.createEl("input", { type: "number", cls: "it-input it-input-small" });
-        i.value = cond.value === "" || cond.value == null ? "" : String(cond.value);
+        const v = cond.value as string | number | null | undefined;
+        i.value = v === "" || v == null ? "" : String(v);
         i.addEventListener("input", () => {
           const n = parseFloat(i.value);
           cond.value = isNaN(n) ? "" : n;
@@ -297,20 +298,20 @@ export class FilterModal extends Modal {
       }
       case "date": {
         const i = parent.createEl("input", { type: "date", cls: "it-input" });
-        i.value = (cond.value || "").slice(0, 10);
+        i.value = ((cond.value as string | undefined) || "").slice(0, 10);
         i.addEventListener("change", () => { cond.value = i.value || ""; });
         return;
       }
       case "time": {
         const i = parent.createEl("input", { type: "time", cls: "it-input" });
-        i.value = (cond.value || "").slice(0, 5);
+        i.value = ((cond.value as string | undefined) || "").slice(0, 5);
         i.addEventListener("change", () => { cond.value = i.value || ""; });
         return;
       }
       case "between-number":
       case "between-date":
       case "between-time": {
-        const pair: any[] = Array.isArray(cond.value) ? cond.value : [kind === "between-number" ? 0 : "", kind === "between-number" ? 0 : ""];
+        const pair: Array<string | number> = Array.isArray(cond.value) ? (cond.value as Array<string | number>) : [kind === "between-number" ? 0 : "", kind === "between-number" ? 0 : ""];
         cond.value = pair;
         const type = kind === "between-date" ? "date" : kind === "between-time" ? "time" : "number";
         const lo = parent.createEl("input", { type, cls: "it-input it-input-small" });
@@ -339,7 +340,7 @@ export class FilterModal extends Modal {
         return;
       }
       case "multi-option": {
-        const cur: any[] = Array.isArray(cond.value) ? cond.value : [];
+        const cur: Array<string | number> = Array.isArray(cond.value) ? (cond.value as Array<string | number>) : [];
         cond.value = cur;
         const wrap = parent.createDiv({ cls: "it-filter-multi" });
         const opts = field.options || [];

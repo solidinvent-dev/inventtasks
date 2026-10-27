@@ -10,7 +10,7 @@ export interface CustomFieldValueContext {
   taskTitles?: Map<string, string>;
 }
 
-export function isEmptyCustomFieldValue(value: any): boolean {
+export function isEmptyCustomFieldValue(value: unknown): boolean {
   return value === undefined || value === null || value === "" ||
     (Array.isArray(value) && value.length === 0) ||
     (typeof value === "object" && !Array.isArray(value) && Object.keys(value).length === 0);
@@ -39,18 +39,18 @@ export function effectiveCustomFieldValue(
   task: TaskFile,
   field: CustomFieldDef,
   context: CustomFieldValueContext = {},
-): any {
+): unknown {
   if (field.type === "progress_auto") return computeAutoProgress(task, field, context);
   return task.data.custom_fields?.[field.id];
 }
 
-function optionLabel(field: CustomFieldDef, raw: any): string {
+function optionLabel(field: CustomFieldDef, raw: unknown): string {
   return field.options?.find((option) => (option.value ?? option.label) === raw || option.label === raw)?.label ?? String(raw);
 }
 
 export function customFieldText(
   field: CustomFieldDef,
-  raw: any,
+  raw: unknown,
   context: CustomFieldValueContext = {},
 ): string {
   // Exports, filters and grouping must never stringify ciphertext or silently
@@ -58,28 +58,33 @@ export function customFieldText(
   if (isSecretCustomFieldType(field.type)) return "";
   if (isEmptyCustomFieldValue(raw)) return "";
   if (Array.isArray(raw)) {
-    if (field.type === "attachment") return raw.map((item) => item?.name).filter(Boolean).join("; ");
+    if (field.type === "attachment") return (raw as Array<{ name?: string } | null | undefined>).map((item) => item?.name).filter(Boolean).join("; ");
     if (field.type === "relationship") return raw.map((id) => context.taskTitles?.get(String(id)) || String(id)).join("; ");
     if (field.options) return raw.map((value) => optionLabel(field, value)).join("; ");
     return raw.map(String).join("; ");
   }
   if (field.type === "location" && typeof raw === "object") {
-    if (raw.label) return raw.label;
-    if (raw.lat != null && raw.lng != null) return `${raw.lat}, ${raw.lng}`;
-    if (raw.url) return raw.url;
+    const loc = raw as { label?: string; lat?: number | null; lng?: number | null; url?: string; value?: string };
+    if (loc.label) return loc.label;
+    if (loc.lat != null && loc.lng != null) return `${loc.lat}, ${loc.lng}`;
+    if (loc.url) return loc.url;
     // Legacy LinkedValue fallback
-    if (raw.value) return String(raw.label ?? raw.value);
+    if (loc.value) return String(loc.label ?? loc.value);
     return "";
   }
-  if (typeof raw === "object") return String(raw.label ?? raw.value ?? raw.name ?? JSON.stringify(raw));
+  if (typeof raw === "object") {
+    const obj = raw as { label?: string; value?: string; name?: string };
+    return String(obj.label ?? obj.value ?? obj.name ?? JSON.stringify(raw));
+  }
   if (field.type === "dropdown") return optionLabel(field, raw);
   if (field.type === "progress_manual" || field.type === "progress_auto") return `${Math.round(Number(raw) || 0)}%`;
-  return String(raw);
+  const scalar = raw as string | number | boolean;
+  return String(scalar);
 }
 
 export function customFieldSortValue(
   field: CustomFieldDef,
-  raw: any,
+  raw: unknown,
   context: CustomFieldValueContext = {},
 ): string | number | boolean | null {
   if (isSecretCustomFieldType(field.type)) return null;
@@ -87,7 +92,7 @@ export function customFieldSortValue(
   if (typeof raw === "number" || typeof raw === "boolean") return raw;
   if (Array.isArray(raw)) {
     if (raw.length === 0) return null;
-    if (field.type === "attachment") return String(raw[0]?.name || "").toLowerCase();
+    if (field.type === "attachment") return String((raw as Array<{ name?: string } | null | undefined>)[0]?.name || "").toLowerCase();
     if (field.type === "relationship") return (context.taskTitles?.get(String(raw[0])) || String(raw[0])).toLowerCase();
     return optionLabel(field, raw[0]).toLowerCase();
   }

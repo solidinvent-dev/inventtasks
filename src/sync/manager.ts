@@ -214,7 +214,7 @@ export class SyncManager {
   }
 
   private async ensureEntry(ws: WorkspaceEntry): Promise<void> {
-    const s = ws.sync!;
+    const s = ws.sync;
     const root = this.normalizeRoot(ws.workspaceRoot);
     const cfgKey = [s.serverUrl, s.remoteWorkspace, s.token, root].join("\0");
     const existing = this.entries.get(ws.id);
@@ -482,7 +482,7 @@ export class SyncManager {
     };
     socket.onmessage = (ev) => {
       let msg: WatchServerMessage | null = null;
-      try { msg = JSON.parse(String(ev.data)); } catch { return; }
+      try { msg = JSON.parse(String(ev.data)) as WatchServerMessage | null; } catch { return; }
       if (!msg) return;
       if (msg.type === "changes" && msg.rev > entry.state.cursor) {
         // Fast path: contiguous delta carried inline — apply without a GET.

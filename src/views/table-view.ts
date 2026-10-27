@@ -1,8 +1,8 @@
 import { setIcon, Notice, Platform } from "obsidian";
-import { showContextMenu } from "../ui/menu";
+import { showContextMenu, type MenuItem } from "../ui/menu";
 import type InventTasksPlugin from "../main";
 import { favoriteToggleItems } from "./favorites";
-import { TaskFile, StatusDef, PriorityDef, CustomFieldDef, parentTaskIds } from "../types";
+import { TaskFile, TaskData, StatusDef, PriorityDef, PriorityId, CustomFieldDef, parentTaskIds } from "../types";
 import { ViewState } from "./main-view";
 import { appendActivity } from "../data/activity";
 import { renderCustomFieldValue } from "../ui/cf-render";
@@ -16,7 +16,8 @@ import { TaskModal } from "../modals/task-modal";
 import { ExportModal } from "../modals/export-modal";
 import { locationKey } from "../view-state";
 import { t as i18n, fieldLabel, fieldLabelFrom } from "../i18n";
-import { fillCalcCell, hasAnyCalc, openCalcMenu, persistColumnCalcs } from "./column-calc";
+import { fillCalcCell, hasAnyCalc, openCalcMenu, persistColumnCalcs, type RowViewContext } from "./column-calc";
+import { fireAndForget } from "../utils/async";
 import { customFieldText, effectiveCustomFieldValue } from "../data/custom-fields";
 import { uses24HourTime } from "../utils/dates";
 import { renderDateTimeInput, type DateTimeInputHandle, type DateTimeInputKind } from "../ui/datetime-field";
@@ -29,7 +30,7 @@ interface RenderOpts {
   state: ViewState;
   plugin: InventTasksPlugin;
   onTaskClick: (t: TaskFile) => void;
-  context: { statuses: StatusDef[]; priorities: PriorityDef[]; priorityLabels: Record<number, string>; visibleFields: string[] };
+  context: RowViewContext;
   // Re-render just the view body (preserving scroll) — for column reorder /
   // clearing selection where an index emit isn't involved.
   rerender?: () => void;
@@ -100,20 +101,20 @@ export function shouldPersistTableWidths(): boolean {
   return !Platform.isMobile;
 }
 
-export function patchTagsForBulk(data: any, tag: string, mode: "add" | "remove") {
-  const tags = Array.isArray(data.tags) ? data.tags.map(String) : [];
+export function patchTagsForBulk(data: { tags?: unknown }, tag: string, mode: "add" | "remove") {
+  const tags = Array.isArray(data.tags) ? (data.tags as unknown[]).map(String) : [];
   return { tags: mode === "add" ? Array.from(new Set([...tags, tag])) : tags.filter((value: string) => value !== tag) };
 }
 
-export function patchCustomFieldForBulk(data: any, fieldId: string, value: any) {
+export function patchCustomFieldForBulk(data: { custom_fields?: Record<string, unknown> }, fieldId: string, value: unknown) {
   const customFields = { ...(data.custom_fields || {}) };
   if (value === null || value === undefined || value === "" || (Array.isArray(value) && value.length === 0)) delete customFields[fieldId];
   else customFields[fieldId] = value;
   return { custom_fields: customFields };
 }
 
-export function patchAdditionalListForBulk(data: any, listPath: string, homeListPath: string | undefined, mode: "add" | "remove") {
-  const current = Array.isArray(data.additional_lists) ? data.additional_lists.map(String) : [];
+export function patchAdditionalListForBulk(data: { additional_lists?: unknown }, listPath: string, homeListPath: string | undefined, mode: "add" | "remove") {
+  const current = Array.isArray(data.additional_lists) ? (data.additional_lists as unknown[]).map(String) : [];
   if (mode === "add") {
     if (homeListPath === listPath || current.includes(listPath)) return { additional_lists: current.length ? current : undefined };
     return { additional_lists: [...current, listPath] };
@@ -122,7 +123,7 @@ export function patchAdditionalListForBulk(data: any, listPath: string, homeList
   return { additional_lists: next.length ? next : undefined };
 }
 
-export function additionalListCandidatesForBulk(lists: any[], tasks: TaskFile[], mode: "add" | "remove") {
+export function additionalListCandidatesForBulk<L extends { path: string; config?: { system_kind?: unknown } }>(lists: L[], tasks: TaskFile[], mode: "add" | "remove"): L[] {
   const userLists = lists.filter((list) => !list.config?.system_kind);
   if (mode === "add") {
     return userLists.filter((list) => tasks.some((task) => task.listPath !== list.path && !(task.data.additional_lists || []).includes(list.path)));
@@ -132,19 +133,35 @@ export function additionalListCandidatesForBulk(lists: any[], tasks: TaskFile[],
   return userLists.filter((list) => removable.has(list.path));
 }
 
+// Transient bookkeeping the Table view stashes on the view state between renders.
+interface TableStateExtras {
+  __tableScrollLeft?: number;
+  __tableScrollTop?: number;
+  __tableRenderedCount?: number;
+  __tableSelected?: Set<string>;
+  __collapsedSubtasks?: Set<string>;
+}
+
+// Lazy-render observer kept on the scroll container across re-renders.
+interface TableScroller extends HTMLElement {
+  __itTableIO?: IntersectionObserver;
+}
+
+type TaskMutator = (data: TaskData, body: string) => { data: TaskData; body?: string } | void;
+
 function rememberTableScroll(opts: RenderOpts, source?: HTMLElement) {
   const wrap = source?.closest(".it-table-wrap") as HTMLElement | null;
   if (!wrap) return;
-  (opts.state as any).__tableScrollLeft = wrap.scrollLeft;
-  (opts.state as any).__tableScrollTop = wrap.scrollTop;
+  (opts.state as TableStateExtras).__tableScrollLeft = wrap.scrollLeft;
+  (opts.state as TableStateExtras).__tableScrollTop = wrap.scrollTop;
 }
 
 function restoreTableScroll(opts: RenderOpts) {
-  const left = Number((opts.state as any).__tableScrollLeft);
-  const top = Number((opts.state as any).__tableScrollTop);
+  const left = Number((opts.state as TableStateExtras).__tableScrollLeft);
+  const top = Number((opts.state as TableStateExtras).__tableScrollTop);
   if (!Number.isFinite(left) && !Number.isFinite(top)) return;
   window.requestAnimationFrame(() => {
-    const wrap = opts.parent.querySelector(".it-table-wrap") as HTMLElement | null;
+    const wrap = opts.parent.querySelector<HTMLElement>(".it-table-wrap");
     if (!wrap) return;
     if (Number.isFinite(left)) wrap.scrollLeft = left;
     if (Number.isFinite(top)) wrap.scrollTop = top;
@@ -155,7 +172,7 @@ async function updateTaskPreservingTableScroll(
   opts: RenderOpts,
   source: HTMLElement | undefined,
   taskId: string,
-  fn: Parameters<InventTasksPlugin["index"]["updateTask"]>[1],
+  fn: TaskMutator,
 ) {
   rememberTableScroll(opts, source);
   await opts.plugin.index.updateTask(taskId, fn);
@@ -165,7 +182,7 @@ async function updateTaskPreservingTableScroll(
 function renderInlineDateTimeInput(
   parent: HTMLElement,
   kind: DateTimeInputKind,
-  value: any,
+  value: unknown,
   onCommit: (value: string | null, handle: DateTimeInputHandle) => void,
 ): DateTimeInputHandle {
   return renderDateTimeInput({
@@ -181,7 +198,7 @@ function renderInlineDateTimeInput(
   });
 }
 
-async function updateCustomFieldValue(opts: RenderOpts, task: TaskFile, field: CustomFieldDef, value: any, handle?: DateTimeInputHandle, source?: HTMLElement) {
+async function updateCustomFieldValue(opts: RenderOpts, task: TaskFile, field: CustomFieldDef, value: unknown, handle?: DateTimeInputHandle, source?: HTMLElement) {
   if (field.required && (value === null || value === undefined || value === "")) {
     new Notice(i18n("task.notice.requiredField", { name: field.name }));
     handle?.reset(task.data.custom_fields?.[field.id]);
@@ -357,16 +374,16 @@ function renderValuePopover(
     }
     input.addEventListener("click", (e) => e.stopPropagation());
     const actions = wrap.createDiv({ cls: "it-table-edit-actions" });
-    actions.createEl("button", { cls: "it-btn-secondary it-btn-mini", text: i18n("common.clear") }).addEventListener("click", async (e) => {
+    actions.createEl("button", { cls: "it-btn-secondary it-btn-mini", text: i18n("common.clear") }).addEventListener("click", fireAndForget(async (e: MouseEvent) => {
       e.stopPropagation();
       closePopovers();
       onCommit(null);
-    });
-    actions.createEl("button", { cls: "it-btn-primary it-btn-mini", text: i18n("common.set") }).addEventListener("click", async (e) => {
+    }));
+    actions.createEl("button", { cls: "it-btn-primary it-btn-mini", text: i18n("common.set") }).addEventListener("click", fireAndForget(async (e: MouseEvent) => {
       e.stopPropagation();
       closePopovers();
       onCommit(input.value.trim() || null);
-    });
+    }));
     input.focus({ preventScroll: true });
   });
 }
@@ -483,9 +500,9 @@ function renderOptionMultiPicker(
   });
 }
 
-function renderTaskModalCell(td: HTMLElement, task: TaskFile, opts: RenderOpts, field: CustomFieldDef, raw: any) {
+function renderTaskModalCell(td: HTMLElement, task: TaskFile, opts: RenderOpts, field: CustomFieldDef, raw: unknown) {
   td.addClass("it-table-editable");
-  renderCustomFieldValue(td, field, raw, { task, index: opts.plugin.index, mode: "table", chipStyles: (opts.context as any).chipStyles, subtaskStats: (opts.context as any).subtaskStats });
+  renderCustomFieldValue(td, field, raw, { task, index: opts.plugin.index, mode: "table", chipStyles: opts.context.chipStyles, subtaskStats: opts.context.subtaskStats });
   if (!td.textContent?.trim()) td.createSpan({ cls: "it-table-edit-display is-empty", text: "—" });
   td.addEventListener("click", (e) => {
     e.preventDefault();
@@ -511,8 +528,8 @@ function openDocFromTable(opts: RenderOpts, docPath: string | undefined) {
   else void opts.plugin.activateView().then(() => opts.plugin.getMainView()?.openDocLocation(docPath));
 }
 
-function renderRelationshipLinks(td: HTMLElement, task: TaskFile, field: CustomFieldDef, opts: RenderOpts, raw: any) {
-  const ids = Array.isArray(raw) ? raw.filter((x) => typeof x === "string") : [];
+function renderRelationshipLinks(td: HTMLElement, task: TaskFile, field: CustomFieldDef, opts: RenderOpts, raw: unknown) {
+  const ids = Array.isArray(raw) ? (raw as unknown[]).filter((x): x is string => typeof x === "string") : [];
   if (!ids.length) { renderEmptyModalCell(td, task, opts); return; }
   for (const id of ids.slice(0, 3)) {
     const linked = opts.plugin.index.tasksById.get(id);
@@ -528,8 +545,8 @@ function renderRelationshipLinks(td: HTMLElement, task: TaskFile, field: CustomF
   if (ids.length > 3) td.createSpan({ cls: "it-chip it-chip-meta it-cf-display", text: `+${ids.length - 3}` });
 }
 
-function renderDocRelationshipLinks(td: HTMLElement, task: TaskFile, field: CustomFieldDef, opts: RenderOpts, raw: any) {
-  const ids = Array.isArray(raw) ? raw.filter((x) => typeof x === "string") : [];
+function renderDocRelationshipLinks(td: HTMLElement, task: TaskFile, field: CustomFieldDef, opts: RenderOpts, raw: unknown) {
+  const ids = Array.isArray(raw) ? (raw as unknown[]).filter((x): x is string => typeof x === "string") : [];
   if (!ids.length) { renderEmptyModalCell(td, task, opts); return; }
   for (const id of ids.slice(0, 3)) {
     const doc = opts.plugin.index.docById(id);
@@ -552,8 +569,8 @@ function renderCustomFieldEditor(td: HTMLElement, task: TaskFile, field: CustomF
       task,
       index: opts.plugin.index,
       mode: "table",
-      chipStyles: (opts.context as any).chipStyles,
-      subtaskStats: (opts.context as any).subtaskStats,
+      chipStyles: opts.context.chipStyles,
+      subtaskStats: opts.context.subtaskStats,
     });
   };
 
@@ -581,7 +598,7 @@ function renderCustomFieldEditor(td: HTMLElement, task: TaskFile, field: CustomF
   }
 
   if (field.type === "text") {
-    const value = String(raw ?? "");
+    const value = String((raw as string | null | undefined) ?? "");
     if (Platform.isMobile) {
       td.addClass("it-table-editable");
       stopCellClick(td);
@@ -604,7 +621,7 @@ function renderCustomFieldEditor(td: HTMLElement, task: TaskFile, field: CustomF
     if (!td.textContent?.trim()) td.createSpan({ cls: "it-table-edit-display is-empty", text: "—" });
     td.addEventListener("click", (e) => {
       e.stopPropagation();
-      renderValuePopover(td, String(raw ?? ""), { textarea: true, placeholder: field.name }, (next) => void updateCustomFieldValue(opts, task, field, next, undefined, td));
+      renderValuePopover(td, String((raw as string | null | undefined) ?? ""), { textarea: true, placeholder: field.name }, (next) => void updateCustomFieldValue(opts, task, field, next, undefined, td));
     });
     return;
   }
@@ -628,19 +645,19 @@ function renderCustomFieldEditor(td: HTMLElement, task: TaskFile, field: CustomF
   if (field.type === "dropdown") {
     td.addClass("it-table-editable");
     stopCellClick(td);
-    const current = String(raw ?? "");
+    const current = String((raw as string | null | undefined) ?? "");
     const opt = field.options?.find((o) => (o.value ?? o.label) === current || o.label === current);
     const chip = td.createEl("button", { cls: "it-chip it-chip-tag it-table-edit-display", text: opt?.label || (current || "—") });
     if (opt?.color) chip.style.setProperty("--chip-color", opt.color);
-    applyChipStyleByKind(chip, "custom_field", (opts.context as any).chipStyles);
+    applyChipStyleByKind(chip, "custom_field", opts.context.chipStyles);
     chip.addEventListener("click", (e) => {
       e.stopPropagation();
-      showPopover(chip, (root) => buildDropdown({
+      showPopover(chip, (root) => buildDropdown<string | null>({
         parent: root,
-        current: raw ?? null,
+        current: (raw as string | null | undefined) ?? null,
         items: [
-          ...(field.options || []).map((o) => ({ value: (o.value ?? o.label) as any, label: o.label, color: o.color })),
-          { value: null as any, label: "—" },
+          ...(field.options || []).map((o) => ({ value: o.value ?? o.label, label: o.label, color: o.color })),
+          { value: null, label: "—" },
         ],
         onSelect: (v) => {
           closePopovers();
@@ -658,7 +675,8 @@ function renderCustomFieldEditor(td: HTMLElement, task: TaskFile, field: CustomF
     if (!td.textContent?.trim()) td.createSpan({ cls: "it-table-edit-display is-empty", text: "—" });
     td.addEventListener("click", (e) => {
       e.stopPropagation();
-      const selected = Array.isArray(raw) ? raw.map(String) : raw ? [String(raw)] : [];
+      const scalar = raw as string | number | boolean | null | undefined;
+      const selected = Array.isArray(raw) ? raw.map(String) : scalar ? [String(scalar)] : [];
       renderOptionMultiPicker(td, selected, (field.options || []).map((o) => ({ value: o.value ?? o.label, label: o.label, color: o.color })), (values) => {
         void updateCustomFieldValue(opts, task, field, values, undefined, td);
       });
@@ -690,7 +708,7 @@ function renderCustomFieldEditor(td: HTMLElement, task: TaskFile, field: CustomF
   }
 
   if (field.type === "progress_auto") {
-    const resolved = effectiveCustomFieldValue(task, field, { subtaskStats: (opts.context as any).subtaskStats, allTasks: (opts.context as any).subtaskStats ? undefined : opts.plugin.index.allTasks() });
+    const resolved: unknown = effectiveCustomFieldValue(task, field, { subtaskStats: opts.context.subtaskStats, allTasks: opts.context.subtaskStats ? undefined : opts.plugin.index.allTasks() });
     renderProgressDisplay(td, Number(resolved) || 0, false);
     return;
   }
@@ -709,8 +727,8 @@ export function renderTableView(opts: RenderOpts) {
   // Tear down any lazy-render observer from a previous render into this same
   // scroll container (refreshContent reuses the body element).
   const scroller = parent;
-  (scroller as any).__itTableIO?.disconnect?.();
-  (scroller as any).__itTableIO = undefined;
+  (scroller as TableScroller).__itTableIO?.disconnect?.();
+  (scroller as TableScroller).__itTableIO = undefined;
 
   if (tasks.length === 0) {
     parent.createDiv({ cls: "it-empty-state-small", text: i18n("list.noTasks") });
@@ -722,26 +740,26 @@ export function renderTableView(opts: RenderOpts) {
   if (!visible.includes("title")) visible.unshift("title");
   else { visible.splice(visible.indexOf("title"), 1); visible.unshift("title"); }
 
-  const customFields = (context as any).customFields as CustomFieldDef[] | undefined;
-  const fieldLabels = (context as any).fieldLabels as Record<string, string> | undefined;
+  const customFields = context.customFields;
+  const fieldLabels = context.fieldLabels;
   const headerLabel = (col: string): string => {
     if (col.startsWith("custom_field:")) return customFields?.find((c) => c.id === col.slice(13))?.name || col.slice(13);
     return tableColLabel(col, fieldLabels);
   };
 
   const widths: Record<string, number> = state.tableColWidths || (state.tableColWidths = {});
-  const selected: Set<string> = (state as any).__tableSelected instanceof Set
-    ? (state as any).__tableSelected
-    : ((state as any).__tableSelected = new Set<string>());
+  const selected: Set<string> = (state as TableStateExtras).__tableSelected instanceof Set
+    ? (state as TableStateExtras).__tableSelected as Set<string>
+    : ((state as TableStateExtras).__tableSelected = new Set<string>());
 
   // ---- Bulk-edit bar (in place, no full re-render on selection change) ----
   const bulkBar = parent.createDiv({ cls: "it-bulk-bar" });
   const updateBulkBar = () => renderBulkBar(bulkBar, selected, opts);
 
   // ---- Subtask nesting (mirror of List view) ----
-  const nested = (context as any).subtaskMode === "nested";
+  const nested = context.subtaskMode === "nested";
   const tree: SubtaskTree | null = nested ? buildSubtaskTree(tasks) : null;
-  const collapsed: Set<string> = ((state as any).__collapsedSubtasks ||= new Set<string>());
+  const collapsed: Set<string> = ((state as TableStateExtras).__collapsedSubtasks ||= new Set<string>());
   const groupSource = nested ? tree!.roots : tasks;
   const subDepth = maxSubtaskDepth(plugin.index.resolveFeaturesForLocation(state.location));
   const rowsFor = (group: GroupBucket): NestedRow[] =>
@@ -754,25 +772,25 @@ export function renderTableView(opts: RenderOpts) {
         statuses: context.statuses,
         priorities: context.priorities,
         priorityLabels: context.priorityLabels,
-        tagsOrder: (context as any).tagsOrder,
-        contextOrder: (context as any).contextOrder,
-        taskTypesOrder: (context as any).taskTypesOrder,
-        tagsPalette: (context as any).tagsPalette,
-        contextLabels: (context as any).contextLabels,
-        customFields: (context as any).customFields,
-        listMeta: (context as any).listMeta,
-        subtaskStats: (context as any).subtaskStats,
-        taskTitles: (context as any).taskTitles,
-        emptyPositions: (context as any).emptyPositions,
-        fieldLabels: (context as any).fieldLabels,
+        tagsOrder: context.tagsOrder,
+        contextOrder: context.contextOrder,
+        taskTypesOrder: context.taskTypesOrder,
+        tagsPalette: context.tagsPalette,
+        contextLabels: context.contextLabels,
+        customFields: context.customFields,
+        listMeta: context.listMeta,
+        subtaskStats: context.subtaskStats,
+        taskTitles: context.taskTitles,
+        emptyPositions: context.emptyPositions,
+        fieldLabels: context.fieldLabels,
         direction: state.groupDirection,
       })
     : [{ key: "__all", label: "", tasks: groupSource } as GroupBucket];
 
   // ---- Table + fixed-layout colgroup (enables resize + freeze) ----
   const tableWrap = parent.createDiv({ cls: "it-table-wrap" });
-  const rememberedLeft = Number((state as any).__tableScrollLeft);
-  const rememberedTop = Number((state as any).__tableScrollTop);
+  const rememberedLeft = Number((state as TableStateExtras).__tableScrollLeft);
+  const rememberedTop = Number((state as TableStateExtras).__tableScrollTop);
   if (Number.isFinite(rememberedLeft)) tableWrap.scrollLeft = rememberedLeft;
   if (Number.isFinite(rememberedTop)) tableWrap.scrollTop = rememberedTop;
   window.requestAnimationFrame(() => {
@@ -870,7 +888,7 @@ export function renderTableView(opts: RenderOpts) {
         const id = tr.dataset.taskId;
         const on = !!id && selected.has(id);
         tr.classList.toggle("is-selected", on);
-        const cb = tr.querySelector(".it-table-rowsel") as HTMLInputElement | null;
+        const cb = tr.querySelector<HTMLInputElement>(".it-table-rowsel");
         if (cb) cb.checked = on;
       });
       updateBulkBar();
@@ -882,7 +900,7 @@ export function renderTableView(opts: RenderOpts) {
       // Icon + label go in an inner flex wrapper — NEVER set display:flex on the
       // <th> itself, that drops it out of the table layout (broken header).
       const thInner = th.createDiv({ cls: "it-th-inner" });
-      if ((opts.context as any).showFieldIcons) renderFieldIcon(thInner, col, customFields as any); // colored field-type icon
+      if (opts.context.showFieldIcons) renderFieldIcon(thInner, col, customFields); // colored field-type icon
       thInner.createSpan({ cls: "it-th-label", text: headerLabel(col) });
 
       // Column reorder (drag) and resize are pointer/mouse-only — disabled on
@@ -947,11 +965,11 @@ export function renderTableView(opts: RenderOpts) {
       opts.onToggleGroup?.(group.key);
     });
     const kind = chipKindForGroupBy(state.groupBy, (id) =>
-      ((opts.context as any).customFields as Array<{ id: string; type: string }> | undefined)
+      (opts.context.customFields as Array<{ id: string; type: string }> | undefined)
         ?.find((f) => f.id === id)?.type,
     );
     if (kind) {
-      renderGroupHeaderChip(header, group, kind, (opts.context as any).chipStyles);
+      renderGroupHeaderChip(header, group, kind, opts.context.chipStyles);
     } else {
       // Non-chip axis (e.g. List): show the group icon when present, else a dot.
       if (group.icon) {
@@ -1011,7 +1029,7 @@ export function renderTableView(opts: RenderOpts) {
       else if (it.kind === "groupsummary") renderGroupSummaryRow(it.group);
       else renderTableRow(tbody, it.row, opts, visible, sel, toggleCollapse, collapsed);
     }
-    (state as any).__tableRenderedCount = next;
+    (state as TableStateExtras).__tableRenderedCount = next;
     syncSelectAll();
   };
 
@@ -1053,7 +1071,7 @@ export function renderTableView(opts: RenderOpts) {
     return;
   }
 
-  const prev = Number((state as any).__tableRenderedCount) || 0;
+  const prev = Number((state as TableStateExtras).__tableRenderedCount) || 0;
   renderChunk(Math.min(items.length, Math.max(80, prev)));
   if (next < items.length) {
     const sentinelRow = tbody.createEl("tr", { cls: "it-table-sentinel" });
@@ -1062,12 +1080,12 @@ export function renderTableView(opts: RenderOpts) {
     const io = new IntersectionObserver((entries) => {
       if (!entries.some((e) => e.isIntersecting)) return;
       renderChunk(60);
-      if (next >= items.length) { io.disconnect(); sentinelRow.remove(); (scroller as any).__itTableIO = undefined; }
+      if (next >= items.length) { io.disconnect(); sentinelRow.remove(); (scroller as TableScroller).__itTableIO = undefined; }
       else tbody.appendChild(sentinelRow);
       // The .it-table-wrap (flex:1) is the actual scroll container — not body.
     }, { root: tableWrap, rootMargin: "0px 0px 900px 0px" });
     io.observe(sentinelRow);
-    (scroller as any).__itTableIO = io;
+    (scroller as TableScroller).__itTableIO = io;
   }
 }
 
@@ -1075,7 +1093,7 @@ export function renderTableView(opts: RenderOpts) {
 function renderBulkBar(bar: HTMLElement, selected: Set<string>, opts: RenderOpts) {
   bar.empty();
   const { plugin, context } = opts;
-  const fieldLabels = (context as any).fieldLabels as Record<string, string> | undefined;
+  const fieldLabels = context.fieldLabels;
   const flabel = (key: string) => fieldLabelFrom(fieldLabels, key);
   const count = selected.size;
   if (count === 0) { bar.hide(); return; }
@@ -1094,25 +1112,25 @@ function renderBulkBar(bar: HTMLElement, selected: Set<string>, opts: RenderOpts
 
   mkBtn(flabel("status"), "circle-dot").addEventListener("click", (e) => {
     showPopover(e.currentTarget as HTMLElement, (root) => buildDropdown({
-      parent: root, current: undefined as any,
+      parent: root, current: undefined,
       items: context.statuses.map((s) => ({ value: s.id, label: s.name, color: s.color })),
-      onSelect: async (v) => { closePop(); await plugin.index.bulkUpdateTasks(ids(), () => ({ status: v })); },
+      onSelect: fireAndForget(async (v: string) => { closePop(); await plugin.index.bulkUpdateTasks(ids(), () => ({ status: v })); }),
     }));
   });
 
   mkBtn(flabel("priority"), "flag").addEventListener("click", (e) => {
-    showPopover(e.currentTarget as HTMLElement, (root) => buildDropdown({
-      parent: root, current: undefined as any,
-      items: [...context.priorities.map((p) => ({ value: p.id as any, label: p.label, color: p.color })), { value: null as any, label: i18n("action.noPriority") }],
-      onSelect: async (v) => { closePop(); await plugin.index.bulkUpdateTasks(ids(), () => ({ priority: v ?? null })); },
+    showPopover(e.currentTarget as HTMLElement, (root) => buildDropdown<PriorityId | null>({
+      parent: root, current: undefined,
+      items: [...context.priorities.map((p) => ({ value: p.id, label: p.label, color: p.color })), { value: null, label: i18n("action.noPriority") }],
+      onSelect: fireAndForget(async (v: PriorityId | null) => { closePop(); await plugin.index.bulkUpdateTasks(ids(), () => ({ priority: v ?? null })); }),
     }));
   });
 
   mkBtn(flabel("type"), "shapes").addEventListener("click", (e) => {
     showPopover(e.currentTarget as HTMLElement, (root) => buildDropdown({
-      parent: root, current: undefined as any,
+      parent: root, current: undefined,
       items: plugin.index.resolveTaskTypesForLocation(opts.state.location).map((tt) => ({ value: tt.id, label: tt.name, color: tt.color, icon: tt.icon })),
-      onSelect: async (v) => { closePop(); await plugin.index.bulkUpdateTasks(ids(), () => ({ type: v })); },
+      onSelect: fireAndForget(async (v: string) => { closePop(); await plugin.index.bulkUpdateTasks(ids(), () => ({ type: v })); }),
     }));
   });
 
@@ -1122,8 +1140,8 @@ function renderBulkBar(bar: HTMLElement, selected: Set<string>, opts: RenderOpts
       const input = w.createEl("input", { type: "date" });
       const set = w.createEl("button", { cls: "it-btn-primary", text: i18n("common.set") });
       const clr = w.createEl("button", { cls: "it-btn-secondary", text: i18n("common.clear") });
-      set.addEventListener("click", async () => { closePop(); await plugin.index.bulkUpdateTasks(ids(), () => ({ due_date: input.value || null })); });
-      clr.addEventListener("click", async () => { closePop(); await plugin.index.bulkUpdateTasks(ids(), () => ({ due_date: null })); });
+      set.addEventListener("click", fireAndForget(async () => { closePop(); await plugin.index.bulkUpdateTasks(ids(), () => ({ due_date: input.value || null })); }));
+      clr.addEventListener("click", fireAndForget(async () => { closePop(); await plugin.index.bulkUpdateTasks(ids(), () => ({ due_date: null })); }));
     });
   });
 
@@ -1132,11 +1150,11 @@ function renderBulkBar(bar: HTMLElement, selected: Set<string>, opts: RenderOpts
       const labels = plugin.index.resolveContextLabelsForLocation(opts.state.location);
       if (labels.length === 0) { root.createDiv({ cls: "it-empty-row", text: i18n("action.noContextLabels") }); return; }
       buildDropdown({
-        parent: root, current: undefined as any,
+        parent: root, current: undefined,
         items: labels.map((cl) => ({ value: cl.name, label: cl.name, color: cl.color })),
         // Context is multi-value: add the chosen label to each selected task
         // (deduped), keeping any labels they already have.
-        onSelect: async (v) => { closePop(); await plugin.index.bulkUpdateTasks(ids(), (d) => ({ context: Array.from(new Set([...(d.context || []), v])) })); },
+        onSelect: fireAndForget(async (v: string) => { closePop(); await plugin.index.bulkUpdateTasks(ids(), (d: TaskData) => ({ context: Array.from(new Set([...(d.context || []), v])) })); }),
       });
     });
   });
@@ -1155,7 +1173,7 @@ function renderBulkBar(bar: HTMLElement, selected: Set<string>, opts: RenderOpts
       const items = Array.from(names).map((tag) => ({ value: tag, label: tag, color: colors.get(tag) }));
       const applyTag = async (tag: string, mode: "add" | "remove") => {
         closePop();
-        await plugin.index.bulkUpdateTasks(ids(), (d) => patchTagsForBulk(d, tag, mode));
+        await plugin.index.bulkUpdateTasks(ids(), (d: TaskData) => patchTagsForBulk(d, tag, mode));
       };
       const showTags = (mode: "add" | "remove") => {
         root.empty();
@@ -1172,10 +1190,10 @@ function renderBulkBar(bar: HTMLElement, selected: Set<string>, opts: RenderOpts
       remove.createSpan({ text: i18n("common.remove") });
       remove.addEventListener("click", (ev) => { ev.stopPropagation(); showTags("remove"); });
       menu.createDiv({ cls: "it-popover-sep" });
-      menu.createEl("button", { cls: "it-popover-item it-popover-footer-item", text: i18n("common.clear") }).addEventListener("click", async (ev) => {
+      menu.createEl("button", { cls: "it-popover-item it-popover-footer-item", text: i18n("common.clear") }).addEventListener("click", fireAndForget(async (ev: MouseEvent) => {
         ev.stopPropagation(); closePop();
         await plugin.index.bulkUpdateTasks(ids(), () => ({ tags: [] }));
-      });
+      }));
     });
   });
 
@@ -1188,11 +1206,11 @@ function renderBulkBar(bar: HTMLElement, selected: Set<string>, opts: RenderOpts
       const fields = plugin.index.resolveCustomFieldsForLocation(opts.state.location).filter((field) => supported.has(field.type));
       if (!fields.length) { root.createDiv({ cls: "it-empty-row", text: i18n("task.customFields.empty") }); return; }
 
-      const applyValue = async (field: CustomFieldDef, value: any) => {
+      const applyValue = async (field: CustomFieldDef, value: unknown) => {
         closePop();
-        await plugin.index.bulkUpdateTasks(ids(), (d) => patchCustomFieldForBulk(d, field.id, value));
+        await plugin.index.bulkUpdateTasks(ids(), (d: TaskData) => patchCustomFieldForBulk(d, field.id, value));
       };
-      const addActions = (wrap: HTMLElement, field: CustomFieldDef, readValue: () => any) => {
+      const addActions = (wrap: HTMLElement, field: CustomFieldDef, readValue: () => unknown) => {
         const actions = wrap.createDiv({ cls: "it-table-edit-actions" });
         if (!field.required) actions.createEl("button", { cls: "it-btn-secondary it-btn-mini", text: i18n("common.clear") }).addEventListener("click", () => void applyValue(field, null));
         actions.createEl("button", { cls: "it-btn-primary it-btn-mini", text: i18n("common.apply") }).addEventListener("click", () => {
@@ -1219,11 +1237,11 @@ function renderBulkBar(bar: HTMLElement, selected: Set<string>, opts: RenderOpts
           return;
         }
         if (field.type === "checkbox") {
-          buildDropdown({
+          buildDropdown<boolean>({
             parent: wrap, current: undefined,
             items: [
-              { value: true as any, label: i18n("filter.op.is_checked") },
-              { value: false as any, label: i18n("filter.op.is_unchecked") },
+              { value: true, label: i18n("filter.op.is_checked") },
+              { value: false, label: i18n("filter.op.is_unchecked") },
             ],
             onSelect: (value) => void applyValue(field, value),
             footer: field.required ? undefined : [{ label: i18n("common.clear"), onClick: () => void applyValue(field, null) }],
@@ -1293,7 +1311,7 @@ function renderBulkBar(bar: HTMLElement, selected: Set<string>, opts: RenderOpts
         const applyList = async (listPath: string, mode: "add" | "remove") => {
           closePop();
           const homePaths = new Map(selectedTasks.map((task) => [task.data.id, task.listPath]));
-          await plugin.index.bulkUpdateTasks(ids(), (d) => patchAdditionalListForBulk(d, listPath, homePaths.get(d.id), mode));
+          await plugin.index.bulkUpdateTasks(ids(), (d: TaskData) => patchAdditionalListForBulk(d, listPath, homePaths.get(d.id), mode));
         };
         const showLists = (mode: "add" | "remove") => {
           root.empty();
@@ -1323,17 +1341,17 @@ function renderBulkBar(bar: HTMLElement, selected: Set<string>, opts: RenderOpts
       const lists = plugin.index.allLists();
       if (lists.length === 0) { root.createDiv({ cls: "it-empty-row", text: i18n("picker.noOtherLists") }); return; }
       buildDropdown({
-        parent: root, current: undefined as any,
+        parent: root, current: undefined,
         items: lists.map((l) => {
           const sp = l.spacePath ? plugin.index.findSpace(l.spacePath) : undefined;
           return { value: l.path, label: sp ? `${sp.config.name} / ${l.config.name}` : l.config.name, color: l.config.color, icon: l.config.icon || "📋" };
         }),
-        onSelect: async (v) => {
+        onSelect: fireAndForget(async (v: string) => {
           closePop();
           for (const id of ids()) { try { await plugin.index.moveTask(id, v); } catch { /* skip individual failures */ } }
           selected.clear();
           opts.rerender ? opts.rerender() : renderBulkBar(bar, selected, opts);
-        },
+        }),
       });
     });
   });
@@ -1343,29 +1361,29 @@ function renderBulkBar(bar: HTMLElement, selected: Set<string>, opts: RenderOpts
       const lists = plugin.index.allLists().filter((list) => !list.config.system_kind);
       if (!lists.length) { root.createDiv({ cls: "it-empty-row", text: i18n("picker.noOtherLists") }); return; }
       buildDropdown({
-        parent: root, current: undefined as any,
+        parent: root, current: undefined,
         items: lists.map((list) => {
           const space = list.spacePath ? plugin.index.findSpace(list.spacePath) : undefined;
           return { value: list.path, label: space ? `${space.config.name} / ${list.config.name}` : list.config.name, color: list.config.color, icon: list.config.icon || "📋" };
         }),
-        onSelect: async (targetListPath) => {
+        onSelect: fireAndForget(async (targetListPath: string) => {
           closePop();
           try {
             const copies = await plugin.index.copyTasks(ids(), targetListPath);
             new Notice(i18n("table.bulkCopied", { count: copies.length }));
             selected.clear();
             opts.rerender?.();
-          } catch (error: any) {
-            new Notice(i18n("common.failed", { msg: error?.message ?? String(error) }));
+          } catch (error) {
+            new Notice(i18n("common.failed", { msg: (error as Error | undefined)?.message ?? String(error) }));
           }
-        },
+        }),
       });
     });
   });
 
   mkBtn(i18n("common.export"), "download").addEventListener("click", () => {
     const tasks = ids().map((id) => plugin.index.tasksById.get(id)).filter((task): task is TaskFile => !!task);
-    const cols = ((context as any).visibleFields || []).slice();
+    const cols = (context.visibleFields || []).slice();
     if (!cols.includes("title")) cols.unshift("title");
     else { cols.splice(cols.indexOf("title"), 1); cols.unshift("title"); }
     new ExportModal(plugin.app, plugin, {
@@ -1387,7 +1405,7 @@ function renderBulkBar(bar: HTMLElement, selected: Set<string>, opts: RenderOpts
         root.createDiv({ cls: "it-calc-menu-title", text: i18n("merge.selectTarget") });
         buildDropdown({
           parent: root,
-          current: undefined as any,
+          current: undefined,
           items: selectedTasks.map((task) => ({
             value: task.data.id,
             label: `${task.data.title || task.data.id} · ${task.data.id}`,
@@ -1409,8 +1427,8 @@ function renderBulkBar(bar: HTMLElement, selected: Set<string>, opts: RenderOpts
                     new Notice(i18n("table.bulkMerged", { count: result.mergedIds.length, title: result.target.data.title || result.target.data.id }));
                     selected.clear();
                     opts.rerender?.();
-                  } catch (error: any) {
-                    new Notice(i18n("common.failed", { msg: error?.message ?? String(error) }));
+                  } catch (error) {
+                    new Notice(i18n("common.failed", { msg: (error as Error | undefined)?.message ?? String(error) }));
                   }
                 })();
               },
@@ -1420,16 +1438,16 @@ function renderBulkBar(bar: HTMLElement, selected: Set<string>, opts: RenderOpts
       });
     });
   }
-  mkBtn(i18n(inArchive ? "common.unarchive" : "common.archive"), inArchive ? "archive-restore" : "archive").addEventListener("click", async () => {
+  mkBtn(i18n(inArchive ? "common.unarchive" : "common.archive"), inArchive ? "archive-restore" : "archive").addEventListener("click", fireAndForget(async () => {
     try {
       await plugin.index.setTasksArchived(ids(), !inArchive);
       new Notice(i18n(inArchive ? "table.bulkUnarchived" : "table.bulkArchived", { count }));
       selected.clear();
       opts.rerender?.();
-    } catch (error: any) {
-      new Notice(i18n("common.failed", { msg: error?.message ?? String(error) }));
+    } catch (error) {
+      new Notice(i18n("common.failed", { msg: (error as Error | undefined)?.message ?? String(error) }));
     }
-  });
+  }));
 
   mkBtn(i18n("common.delete"), "trash", true).addEventListener("click", () => {
     new ConfirmModal(plugin.app, {
@@ -1437,10 +1455,10 @@ function renderBulkBar(bar: HTMLElement, selected: Set<string>, opts: RenderOpts
       message: i18n("common.tasks", { count }),
       destructive: true,
       confirmLabel: i18n("common.delete"),
-      onConfirm: async () => {
+      onConfirm: fireAndForget(async () => {
         for (const id of ids()) { try { await plugin.index.deleteTask(id); } catch { /* skip */ } }
         selected.clear();
-      },
+      }),
     }).open();
   });
 
@@ -1453,7 +1471,17 @@ export function csvEscape(s: string): string {
   return /[",\n\r]/.test(s) ? '"' + s.replace(/"/g, '""') + '"' : s;
 }
 
-export function csvCellValue(t: TaskFile, col: string, plugin: InventTasksPlugin, context: any): string {
+// What csvCellValue reads from its lookup context (the view context, or the
+// export scope context built by buildScopeContext).
+export interface CsvCellContext {
+  statuses: StatusDef[];
+  priorities: PriorityDef[];
+  customFields?: CustomFieldDef[];
+  subtaskStats?: Map<string, { total: number; done: number }>;
+  taskTitles?: Map<string, string>;
+}
+
+export function csvCellValue(t: TaskFile, col: string, plugin: InventTasksPlugin, context: CsvCellContext): string {
   const d = t.data;
   const ctx = context;
   switch (col) {
@@ -1487,7 +1515,7 @@ export function csvCellValue(t: TaskFile, col: string, plugin: InventTasksPlugin
     const id = col.slice(13);
     const cf = ctx.customFields?.find((c: CustomFieldDef) => c.id === id);
     if (!cf) return "";
-    const raw = effectiveCustomFieldValue(t, cf, { subtaskStats: ctx.subtaskStats });
+    const raw: unknown = effectiveCustomFieldValue(t, cf, { subtaskStats: ctx.subtaskStats });
     return customFieldText(cf, raw, { taskTitles: ctx.taskTitles });
   }
   return "";
@@ -1521,9 +1549,9 @@ function renderTableRow(tbody: HTMLElement, nrow: NestedRow, opts: RenderOpts, v
   setIcon(more, "more-horizontal");
   more.addEventListener("click", (e) => {
     e.stopPropagation();
-    const items: any[] = [
+    const items: MenuItem[] = [
       { label: i18n("action.open"), icon: "expand", onClick: () => onTaskClick(t) },
-      { label: i18n("action.openMd"), icon: "file-text", onClick: () => plugin.index.openTaskInEditor(t.data.id) },
+      { label: i18n("action.openMd"), icon: "file-text", onClick: () => void plugin.index.openTaskInEditor(t.data.id) },
       { label: i18n("action.moveToList"), icon: "folder-input", onClick: () => new MoveTaskModal(plugin.app, plugin, t.data.id).open() },
     ];
     const loc = opts.state.location;
@@ -1536,14 +1564,14 @@ function renderTableRow(tbody: HTMLElement, nrow: NestedRow, opts: RenderOpts, v
           message: i18n("action.removeFromList"),
           destructive: true,
           confirmLabel: i18n("common.remove"),
-          onConfirm: () => plugin.index.removeTaskFromList(t.data.id, loc.path),
+          onConfirm: () => void plugin.index.removeTaskFromList(t.data.id, loc.path),
         }).open(),
       });
     }
     items.push("separator");
     items.push(...favoriteToggleItems(plugin, t.data.id));
     items.push("separator");
-    items.push({ label: i18n("common.delete"), icon: "trash", danger: true, onClick: () => new ConfirmModal(plugin.app, { title: i18n("modal.deleteConfirm"), message: i18n("action.moveToTrash", { title: t.data.title }), destructive: true, onConfirm: () => plugin.index.deleteTask(t.data.id) }).open() });
+    items.push({ label: i18n("common.delete"), icon: "trash", danger: true, onClick: () => new ConfirmModal(plugin.app, { title: i18n("modal.deleteConfirm"), message: i18n("action.moveToTrash", { title: t.data.title }), destructive: true, onConfirm: () => void plugin.index.deleteTask(t.data.id) }).open() });
     showContextMenu(e, items);
   });
 }
@@ -1566,17 +1594,17 @@ function renderTableCell(tr: HTMLElement, t: TaskFile, col: string, opts: Render
         const chip = td.createEl("button", { cls: "it-chip it-chip-tag it-table-edit-display", text: current?.name || t.data.type || "task" });
         if (current?.color) chip.style.setProperty("--chip-color", current.color);
         if (current?.icon) renderIconish(chip.createSpan({ cls: "it-group-chip-icon" }), current.icon);
-        applyChipStyleByKind(chip, "task_type", (context as any).chipStyles);
+        applyChipStyleByKind(chip, "task_type", context.chipStyles);
         chip.addEventListener("click", (e) => {
           e.stopPropagation();
           showPopover(chip, (root) => buildDropdown({
             parent: root,
             current: t.data.type || "task",
             items: types.map((tt) => ({ value: tt.id, label: tt.name, color: tt.color, icon: tt.icon })),
-            onSelect: async (v) => {
+            onSelect: fireAndForget(async (v: string) => {
               closePopovers();
               await updateTaskPreservingTableScroll(opts, td, t.data.id, (d) => ({ data: { ...d, type: v } }));
-            },
+            }),
           }));
         });
       }
@@ -1598,12 +1626,12 @@ function renderTableCell(tr: HTMLElement, t: TaskFile, col: string, opts: Render
       if (Platform.isMobile) {
         titleTd.createSpan({ text: t.data.title || i18n("common.untitled") });
       } else {
-        renderDesktopTextEditableCell(titleTd, t.data.title || "", i18n("common.untitled"), "it-table-title-text", async (value) => {
+        renderDesktopTextEditableCell(titleTd, t.data.title || "", i18n("common.untitled"), "it-table-title-text", fireAndForget(async (value: string | null) => {
           if (!value || value === t.data.title) return;
           await updateTaskPreservingTableScroll(opts, titleTd, t.data.id, (d) => ({
             data: { ...d, title: value, activity: appendActivity(d.activity, { kind: "title", from: d.title ?? null, to: value }) },
           }));
-        }, () => opts.onTaskClick(t), MAX_TASK_TITLE_LENGTH);
+        }), () => opts.onTaskClick(t), MAX_TASK_TITLE_LENGTH);
       }
       break;
     }
@@ -1612,7 +1640,7 @@ function renderTableCell(tr: HTMLElement, t: TaskFile, col: string, opts: Render
       const so = context.statuses.find((s) => s.id === t.data.status);
       const chip = statusTd.createEl("button", { cls: "it-chip it-chip-status", text: so?.name || "—" });
       if (so) { chip.style.setProperty("--chip-color", so.color); chip.setAttribute("data-group", so.group); }
-      applyChipStyleByKind(chip, "status", (context as any).chipStyles);
+      applyChipStyleByKind(chip, "status", context.chipStyles);
       chip.addEventListener("click", (e) => {
         e.stopPropagation();
         // Item's own effective set (not the scope union) — see list-view.
@@ -1622,12 +1650,12 @@ function renderTableCell(tr: HTMLElement, t: TaskFile, col: string, opts: Render
             parent: root,
             current: t.data.status,
             items: itemStatuses.map((s) => ({ value: s.id, label: s.name, color: s.color })),
-            onSelect: async (v) => {
+            onSelect: fireAndForget(async (v: string) => {
               await updateTaskPreservingTableScroll(opts, statusTd, t.data.id, (d) => ({
                 data: { ...d, status: v, activity: appendActivity(d.activity, { kind: "status", from: d.status ?? null, to: v }) },
               }));
               document.querySelectorAll(".it-popover").forEach((el) => el.remove());
-            },
+            }),
           });
         });
       });
@@ -1638,21 +1666,21 @@ function renderTableCell(tr: HTMLElement, t: TaskFile, col: string, opts: Render
       const pdef = t.data.priority ? context.priorities.find((p) => p.id === t.data.priority) : undefined;
       const pchip = prioTd.createEl("button", { cls: "it-chip it-chip-priority", text: pdef?.label || "—" });
       if (pdef) pchip.style.setProperty("--chip-color", pdef.color);
-      applyChipStyleByKind(pchip, "priority", (context as any).chipStyles);
+      applyChipStyleByKind(pchip, "priority", context.chipStyles);
       pchip.addEventListener("click", (e) => {
         e.stopPropagation();
         showPopover(pchip, (root) => {
-          buildDropdown({
+          buildDropdown<PriorityId | null>({
             parent: root,
             current: t.data.priority,
             items: [
-              ...context.priorities.map((p) => ({ value: p.id as any, label: p.label, color: p.color })),
-              { value: null as any, label: i18n("action.noPriority") },
+              ...context.priorities.map((p) => ({ value: p.id, label: p.label, color: p.color })),
+              { value: null, label: i18n("action.noPriority") },
             ],
-            onSelect: async (v) => {
+            onSelect: fireAndForget(async (v: PriorityId | null) => {
               await updateTaskPreservingTableScroll(opts, prioTd, t.data.id, (d) => ({ data: { ...d, priority: v ?? null } }));
               document.querySelectorAll(".it-popover").forEach((el) => el.remove());
-            },
+            }),
           });
         });
       });
@@ -1676,7 +1704,7 @@ function renderTableCell(tr: HTMLElement, t: TaskFile, col: string, opts: Render
       const td = tr.createEl("td");
       const wrap = td.createDiv({ cls: "it-table-tags" });
       const tagsPalette = plugin.index.resolveTagsPalette({ listPath: t.listPath });
-      renderTagsCell(wrap, t.data.tags || [], tagsPalette, 2, (context as any).chipStyles);
+      renderTagsCell(wrap, t.data.tags || [], tagsPalette, 2, context.chipStyles);
       if (!(t.data.tags || []).length) wrap.createSpan({ cls: "it-table-add-placeholder", text: "+ tag" });
       td.addClass("it-table-editable");
       stopCellClick(td);
@@ -1685,9 +1713,9 @@ function renderTableCell(tr: HTMLElement, t: TaskFile, col: string, opts: Render
         const map = new Map<string, { value: string; label: string; color?: string }>();
         for (const tag of tagsPalette) map.set(tag.name, { value: tag.name, label: tag.name, color: tag.color });
         for (const tag of t.data.tags || []) if (!map.has(tag)) map.set(tag, { value: tag, label: tag });
-        renderOptionMultiPicker(td, t.data.tags || [], Array.from(map.values()), async (values) => {
+        renderOptionMultiPicker(td, t.data.tags || [], Array.from(map.values()), fireAndForget(async (values: string[]) => {
           await updateTaskPreservingTableScroll(opts, td, t.data.id, (d) => ({ data: { ...d, tags: values } }));
-        });
+        }));
       });
       break;
     }
@@ -1700,16 +1728,16 @@ function renderTableCell(tr: HTMLElement, t: TaskFile, col: string, opts: Render
       for (const cl of (t.data.context || [])) {
         const chip = wrap.createSpan({ cls: "it-chip it-chip-tag", text: cl });
         if (colorByName[cl]) chip.style.setProperty("--chip-color", colorByName[cl]);
-        applyChipStyleByKind(chip, "context", (context as any).chipStyles);
+        applyChipStyleByKind(chip, "context", context.chipStyles);
       }
       if (!(t.data.context || []).length) wrap.createSpan({ cls: "it-table-add-placeholder", text: "+ context" });
       td.addClass("it-table-editable");
       stopCellClick(td);
       td.addEventListener("click", (e) => {
         e.stopPropagation();
-        renderOptionMultiPicker(td, t.data.context || [], labels.map((cl) => ({ value: cl.name, label: cl.name, color: cl.color })), async (values) => {
+        renderOptionMultiPicker(td, t.data.context || [], labels.map((cl) => ({ value: cl.name, label: cl.name, color: cl.color })), fireAndForget(async (values: string[]) => {
           await updateTaskPreservingTableScroll(opts, td, t.data.id, (d) => ({ data: { ...d, context: values } }));
-        });
+        }));
       });
       break;
     }
@@ -1758,7 +1786,7 @@ function renderTableCell(tr: HTMLElement, t: TaskFile, col: string, opts: Render
     default:
       if (col.startsWith("custom_field:")) {
         const id = col.slice(13);
-        const cf = ((opts.context as any).customFields as CustomFieldDef[] | undefined)?.find((c) => c.id === id);
+        const cf = opts.context.customFields?.find((c) => c.id === id);
         const td = tr.createEl("td", { cls: "it-table-meta it-table-cf" });
         if (cf) {
           renderCustomFieldEditor(td, t, cf, opts);

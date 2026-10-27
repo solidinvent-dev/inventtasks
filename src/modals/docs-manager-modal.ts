@@ -6,6 +6,7 @@ import { renderIconish } from "../ui/icons";
 import { ConfirmModal } from "./confirm-modal";
 import { MoveDocModal } from "./move-modal";
 import { hierarchyLabel, t } from "../i18n";
+import { fireAndForget } from "../utils/async";
 
 // Workspace-wide list of every Doc, with open / move / delete actions. Opened
 // from the sidebar header (next to Workspace settings).
@@ -142,7 +143,7 @@ export class DocsManagerModal extends Modal {
         title: t("docsMgr.deleteTitle"),
         message: t("docsMgr.deleteMsg", { name: d.name }),
         destructive: true,
-        onConfirm: async () => { await this.plugin.index.deleteDoc(d.doc_id); new Notice(t("docsMgr.deleted", { name: d.name })); },
+        onConfirm: fireAndForget(async () => { await this.plugin.index.deleteDoc(d.doc_id); new Notice(t("docsMgr.deleted", { name: d.name })); }),
       }).open();
     });
   }

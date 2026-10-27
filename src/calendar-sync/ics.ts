@@ -124,7 +124,7 @@ export function taskToVTodo(task: TaskFile): string {
   const status = vtodoStatus(d.status_group);
   lines.push(`STATUS:${status}`);
 
-  const prio = icalPriority(d.priority as number | undefined);
+  const prio = icalPriority(d.priority);
   if (prio > 0) lines.push(`PRIORITY:${prio}`);
 
   if (d.tags?.length) {
@@ -189,7 +189,7 @@ export function taskToVEvent(task: TaskFile): string | null {
 
   lines.push(`STATUS:${veventStatus(d.status_group)}`);
 
-  const prio = icalPriority(d.priority as number | undefined);
+  const prio = icalPriority(d.priority);
   if (prio > 0) lines.push(`PRIORITY:${prio}`);
 
   if (d.tags?.length) {

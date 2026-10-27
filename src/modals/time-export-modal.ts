@@ -145,8 +145,8 @@ export class TimeExportModal extends Modal {
         },
       });
       if (exported) this.close();
-    } catch (e: any) {
-      this.error = t("timeExport.failed", { msg: e?.message ?? String(e) });
+    } catch (e) {
+      this.error = t("timeExport.failed", { msg: (e as Error | undefined)?.message ?? String(e) });
       this.render();
     }
   }

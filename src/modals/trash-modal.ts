@@ -5,6 +5,7 @@ import { ConfirmModal } from "./confirm-modal";
 import { formatDate } from "../utils/dates";
 import { hierarchyLabel, t } from "../i18n";
 import { renderHierarchyPicker } from "./move-modal";
+import { fireAndForget } from "../utils/async";
 
 const KIND_ICON: Record<TrashedItem["kind"], string> = {
   task: "check-square",
@@ -90,12 +91,12 @@ export class TrashModal extends Modal {
         message: t("trash.emptyMsg", { count: this.entries.length }),
         destructive: true,
         confirmLabel: t("trash.deleteAll"),
-        onConfirm: async () => {
+        onConfirm: fireAndForget(async () => {
           for (const e of this.entries) {
-            try { await this.purge(e); } catch (err: any) { new Notice(t("common.failed", { msg: err.message })); }
+            try { await this.purge(e); } catch (err) { new Notice(t("common.failed", { msg: (err as Error).message })); }
           }
           await this.refresh();
-        },
+        }),
       }).open();
     });
 
@@ -118,7 +119,7 @@ export class TrashModal extends Modal {
       const restore = actions.createEl("button", { cls: "it-btn-secondary", attr: { type: "button", "aria-label": t("trash.restore") } });
       setIcon(restore.createSpan(), "rotate-ccw");
       restore.appendChild(document.createTextNode(" " + t("trash.restore")));
-      restore.addEventListener("click", async () => {
+      restore.addEventListener("click", fireAndForget(async () => {
         if (this.needsRestorePicker(e)) {
           this.openRestorePicker(e);
           return;
@@ -128,10 +129,10 @@ export class TrashModal extends Modal {
           new Notice(t("trash.restored", { name: e.name }));
           this.plugin.refreshViews();
           await this.refresh();
-        } catch (err: any) {
-          new Notice(t("trash.restoreFailed", { msg: err.message }));
+        } catch (err) {
+          new Notice(t("trash.restoreFailed", { msg: (err as Error).message }));
         }
-      });
+      }));
 
       const del = actions.createEl("button", { cls: "it-btn-ghost it-danger", attr: { type: "button", "aria-label": t("trash.deleteForever") } });
       setIcon(del, "trash-2");
@@ -142,10 +143,10 @@ export class TrashModal extends Modal {
           message: t("trash.deleteForeverMsg", { name: e.name, extra }),
           destructive: true,
           confirmLabel: t("trash.deleteForever"),
-          onConfirm: async () => {
-            try { await this.purge(e); } catch (err: any) { new Notice(t("common.failed", { msg: err.message })); }
+          onConfirm: fireAndForget(async () => {
+            try { await this.purge(e); } catch (err) { new Notice(t("common.failed", { msg: (err as Error).message })); }
             await this.refresh();
-          },
+          }),
         }).open();
       });
     }
@@ -182,7 +183,7 @@ class RestoreTaskListModal extends Modal {
     const actions = c.createDiv({ cls: "it-modal-actions" });
     actions.createEl("button", { text: t("common.cancel"), cls: "it-btn-ghost" }).addEventListener("click", () => this.close());
     const restore = actions.createEl("button", { text: t("trash.restoreHere"), cls: "it-btn-primary" });
-    restore.addEventListener("click", async () => {
+    restore.addEventListener("click", fireAndForget(async () => {
       if (!this.selectedListPath) {
         new Notice(t("common.pickListFirst"));
         return;
@@ -190,9 +191,9 @@ class RestoreTaskListModal extends Modal {
       try {
         await this.onRestore(this.selectedListPath);
         this.close();
-      } catch (err: any) {
-        new Notice(t("trash.restoreFailed", { msg: err.message }));
+      } catch (err) {
+        new Notice(t("trash.restoreFailed", { msg: (err as Error).message }));
       }
-    });
+    }));
   }
 }

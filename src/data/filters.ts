@@ -1,4 +1,4 @@
-import { FilterCondition, FilterGroup, SortRule, TaskFile, StatusDef, CustomFieldDef } from "../types";
+import { FilterCondition, FilterGroup, SortRule, TaskFile, StatusDef, CustomFieldDef, TaskData } from "../types";
 import { parseDate, isOverdue, dayKey, todayKey, dayDiff, relativeBucket, bucketOrder } from "../utils/dates";
 import { customFieldSortValue, effectiveCustomFieldValue } from "./custom-fields";
 import { t as tr, fieldLabelFrom } from "../i18n";
@@ -11,33 +11,39 @@ export interface CustomFieldContext {
   taskTitles?: Map<string, string>;
 }
 
-function getFieldValue(t: TaskFile, field: string, context: CustomFieldContext = {}): any {
+// A task's data read by a field key that is only known at runtime.
+type TaskRecord = TaskData & Record<string, unknown>;
+// Date-like field values as the date helpers read them.
+type DateText = string | null | undefined;
+
+function getFieldValue(t: TaskFile, field: string, context: CustomFieldContext = {}): unknown {
   if (field.startsWith("custom_field:")) {
     const key = field.slice("custom_field:".length);
     const cf = context.customFields?.find((candidate) => candidate.id === key);
     return cf ? effectiveCustomFieldValue(t, cf, context) : t.data.custom_fields?.[key];
   }
-  const d = t.data as any;
+  const d = t.data as TaskRecord;
   return d[field];
 }
 
-function linkedParts(value: any): string[] | null {
+function linkedParts(raw: unknown): string[] | null {
+  const value = raw as { label?: unknown; value?: unknown } | null | undefined;
   if (!value || typeof value !== "object" || Array.isArray(value) || typeof value.value !== "string") return null;
   return [value.label, value.value].filter((part): part is string => typeof part === "string" && !!part);
 }
 
-function textValue(value: any): string | null {
+function textValue(value: unknown): string | null {
   if (typeof value === "string") return value;
   const parts = linkedParts(value);
   return parts ? parts.join(" ") : null;
 }
 
-function equalsValue(value: any, expected: any): boolean {
+function equalsValue(value: unknown, expected: unknown): boolean {
   const parts = linkedParts(value);
   return parts ? parts.includes(String(expected)) : value === expected;
 }
 
-function timeValue(value: any): string | null {
+function timeValue(value: unknown): string | null {
   const match = typeof value === "string" ? /^(\d{2}):(\d{2})/.exec(value) : null;
   return match ? `${match[1]}:${match[2]}` : null;
 }
@@ -75,13 +81,15 @@ export function evaluateCondition(t: TaskFile, c: FilterCondition, context: Cust
     case "in":
     case "any_of":
       if (!Array.isArray(c.value)) return false;
-      if (Array.isArray(v)) return v.some((x) => c.value.includes(x));
-      return c.value.includes(v);
+      { const set = c.value as unknown[];
+        if (Array.isArray(v)) return v.some((x) => set.includes(x));
+        return set.includes(v); }
     case "not_in":
     case "none_of":
       if (!Array.isArray(c.value)) return true;
-      if (Array.isArray(v)) return !v.some((x) => c.value.includes(x));
-      return !c.value.includes(v);
+      { const set = c.value as unknown[];
+        if (Array.isArray(v)) return !v.some((x) => set.includes(x));
+        return !set.includes(v); }
     case "all_of":
       if (!Array.isArray(c.value) || !Array.isArray(v)) return false;
       return c.value.every((x) => v.includes(x));
@@ -96,39 +104,39 @@ export function evaluateCondition(t: TaskFile, c: FilterCondition, context: Cust
     case "lte":
       return typeof v === "number" && v <= Number(c.value);
     case "is_today": {
-      const dk = dayKey(v);
+      const dk = dayKey(v as DateText);
       return !!dk && dk === todayKey();
     }
     case "is_tomorrow": {
-      const dk = dayKey(v);
+      const dk = dayKey(v as DateText);
       return !!dk && dayDiff(todayKey(), dk) === 1;
     }
     case "is_yesterday": {
-      const dk = dayKey(v);
+      const dk = dayKey(v as DateText);
       return !!dk && dayDiff(todayKey(), dk) === -1;
     }
     case "is_overdue":
-      return isOverdue(v, t.data.status_group);
+      return isOverdue(v as DateText, t.data.status_group);
     case "before": {
       const tv = timeValue(v), tref = timeValue(c.value);
       if (tv && tref) return tv < tref;
-      const dk = dayKey(v); const ref = dayKey(c.value);
+      const dk = dayKey(v as DateText); const ref = dayKey(c.value as string | null | undefined);
       return !!(dk && ref && dk < ref);
     }
     case "after": {
       const tv = timeValue(v), tref = timeValue(c.value);
       if (tv && tref) return tv > tref;
-      const dk = dayKey(v); const ref = dayKey(c.value);
+      const dk = dayKey(v as DateText); const ref = dayKey(c.value as string | null | undefined);
       return !!(dk && ref && dk > ref);
     }
     case "in_next": {
-      const dk = dayKey(v);
+      const dk = dayKey(v as DateText);
       if (!dk) return false;
       const diff = dayDiff(todayKey(), dk);
       return diff >= 0 && diff <= Number(c.value);
     }
     case "in_last": {
-      const dk = dayKey(v);
+      const dk = dayKey(v as DateText);
       if (!dk) return false;
       const diff = dayDiff(todayKey(), dk);
       // date falls within the past N days (inclusive of today)
@@ -138,7 +146,7 @@ export function evaluateCondition(t: TaskFile, c: FilterCondition, context: Cust
       // value is a 2-tuple [min, max]. Works for numbers and for dates
       // (ISO strings) — numeric comparison first, calendar-day fallback.
       if (!Array.isArray(c.value) || c.value.length < 2) return false;
-      const [lo, hi] = c.value;
+      const [lo, hi] = c.value as unknown[];
       if (typeof v === "number") {
         const a = Number(lo), b = Number(hi);
         return v >= Math.min(a, b) && v <= Math.max(a, b);
@@ -149,7 +157,7 @@ export function evaluateCondition(t: TaskFile, c: FilterCondition, context: Cust
         const hiT = lot < hit ? hit : lot;
         return tv >= loT && tv <= hiT;
       }
-      const dk = dayKey(v), lok = dayKey(lo), hik = dayKey(hi);
+      const dk = dayKey(v as DateText), lok = dayKey(lo as DateText), hik = dayKey(hi as DateText);
       if (dk && lok && hik) {
         const loK = lok < hik ? lok : hik;
         const hiK = lok < hik ? hik : lok;
@@ -225,7 +233,7 @@ export function sortTasks(
   return decorated.map((d) => d.t);
 }
 
-function getSortValue(t: TaskFile, field: string, statusOrder: Map<string, number>, opts: SortContext): any {
+function getSortValue(t: TaskFile, field: string, statusOrder: Map<string, number>, opts: SortContext): unknown {
   if (field === "status") return statusOrder.get(t.data.status || "") ?? 999;
   // Missing values are reported as null, never as a sentinel like 99 or
   // Infinity. A sentinel is an ordinary value to the comparator, so it rides
@@ -239,7 +247,7 @@ function getSortValue(t: TaskFile, field: string, statusOrder: Map<string, numbe
     return d ? d.getTime() : null;
   }
   if (field === "due_date" || field === "created_at" || field === "updated_at") {
-    const d = parseDate((t.data as any)[field]);
+    const d = parseDate(t.data[field]);
     return d ? d.getTime() : null;
   }
   if (field === "title") return (t.data.title || "").toLowerCase();
@@ -266,13 +274,17 @@ function getSortValue(t: TaskFile, field: string, statusOrder: Map<string, numbe
     const id = field.slice(13);
     const cf = opts.customFields?.find((candidate) => candidate.id === id);
     const value = cf ? effectiveCustomFieldValue(t, cf, opts) : t.data.custom_fields?.[id];
-    if (!cf) return value === undefined || value === null ? null : String(value).toLowerCase();
+    if (!cf) {
+      if (value === undefined || value === null) return null;
+      const shown: { toString(): string } = value;
+      return String(shown).toLowerCase();
+    }
     return customFieldSortValue(cf, value, opts);
   }
-  return (t.data as any)[field];
+  return (t.data as TaskRecord)[field];
 }
 
-function compareValues(a: any, b: any): number {
+function compareValues(a: unknown, b: unknown): number {
   if (a === null || a === undefined) {
     if (b === null || b === undefined) return 0;
     return 1;
@@ -362,7 +374,7 @@ export function groupTasks(
       const p = t.data.priority;
       const isEmpty = !p;
       const key = isEmpty ? "__no_priority" : String(p);
-      const lbl = isEmpty ? emptyLabel("priority") : (context.priorityLabels?.[p!] ?? `Priority ${p}`);
+      const lbl = isEmpty ? emptyLabel("priority") : (context.priorityLabels?.[p] ?? `Priority ${p}`);
       const idx = isEmpty ? -1 : (context.priorities?.findIndex((x) => x.id === p) ?? -1);
       const color = isEmpty ? undefined : context.priorities?.find((x) => x.id === p)?.color;
       const order = isEmpty ? emptyOrder("priority") : (idx >= 0 ? idx : TAIL);
@@ -435,7 +447,7 @@ export function groupTasks(
 //   - never picked up option colors at all → all-gray group chips
 function addCustomFieldBuckets(
   cf: import("../types").CustomFieldDef | undefined,
-  v: any,
+  v: unknown,
   push: (key: string, label: string, color: string | undefined, order: number | undefined, t: TaskFile) => void,
   t: TaskFile,
   TAIL: number,
@@ -450,23 +462,24 @@ function addCustomFieldBuckets(
     push("__empty", cf ? tr("group.noValue", { field: cf.name }) : tr("group.empty"), undefined, -0.5, t);
     return;
   }
+  const shown: { toString(): string } = v;
   // Type-less fallback (CF def missing) — best-effort string display.
   if (!cf) {
-    push(String(v), String(v), undefined, undefined, t);
+    push(String(shown), String(shown), undefined, undefined, t);
     return;
   }
   const opts = cf.options ?? [];
-  const findOpt = (raw: any) => opts.find((o) => (o.value ?? o.label) === raw);
+  const findOpt = (raw: unknown) => opts.find((o) => (o.value ?? o.label) === raw);
   switch (cf.type) {
     case "dropdown": {
       const opt = findOpt(v);
-      const key = String(v);
+      const key = String(shown);
       const idx = opts.findIndex((o) => (o.value ?? o.label) === v);
       push(key, opt?.label ?? key, opt?.color, idx >= 0 ? idx : TAIL, t);
       return;
     }
     case "labels": {
-      const arr: any[] = Array.isArray(v) ? v : [v];
+      const arr: unknown[] = Array.isArray(v) ? v : [v];
       for (const item of arr) {
         const opt = findOpt(item);
         const key = String(item);
@@ -479,8 +492,9 @@ function addCustomFieldBuckets(
     case "email":
     case "phone": {
       // Linked values are stored as { label?, value }; back-compat: bare strings too.
-      const value = typeof v === "object" && v && "value" in v ? v.value : v;
-      const label = typeof v === "object" && v && v.label ? v.label : value;
+      const linked = v as { label?: unknown; value?: unknown } | string;
+      const value = typeof linked === "object" && linked && "value" in linked ? linked.value : linked;
+      const label = typeof linked === "object" && linked && linked.label ? linked.label : value;
       push(String(value), String(label), undefined, undefined, t);
       return;
     }
@@ -488,11 +502,12 @@ function addCustomFieldBuckets(
       // Location has its own { label?, url?, lat?, lng? } shape. Keep a stable,
       // writable bucket key instead of collapsing objects to "[object Object]".
       if (typeof v === "object" && v) {
-        const coords = v.lat != null && v.lng != null ? `${v.lat},${v.lng}` : "";
-        const key = String(v.url || coords || v.label || "");
-        push(key, String(v.label || coords || v.url || key), undefined, undefined, t);
+        const loc = v as { label?: string; url?: string; lat?: number | null; lng?: number | null };
+        const coords = loc.lat != null && loc.lng != null ? `${loc.lat},${loc.lng}` : "";
+        const key = String(loc.url || coords || loc.label || "");
+        push(key, String(loc.label || coords || loc.url || key), undefined, undefined, t);
       } else {
-        push(String(v), String(v), undefined, undefined, t);
+        push(String(shown), String(shown), undefined, undefined, t);
       }
       return;
     }
@@ -506,7 +521,7 @@ function addCustomFieldBuckets(
       let s: string;
       try { s = new Intl.NumberFormat(undefined, { style: "currency", currency: cur }).format(n); }
       catch { s = `${n.toFixed(2)} ${cur}`; }
-      push(String(v), s, undefined, undefined, t);
+      push(String(shown), s, undefined, undefined, t);
       return;
     }
     case "rating": {
@@ -526,13 +541,13 @@ function addCustomFieldBuckets(
       return;
     }
     case "relationship": {
-      const arr: any[] = Array.isArray(v) ? v : [v];
+      const arr: unknown[] = Array.isArray(v) ? v : [v];
       for (const id of arr) push(String(id), context.taskTitles?.get(String(id)) || String(id), undefined, undefined, t);
       return;
     }
     default: {
       // text / textarea / number / date / datetime / time → string passthrough
-      const s = String(v);
+      const s = String(shown);
       push(s, s, undefined, undefined, t);
     }
   }

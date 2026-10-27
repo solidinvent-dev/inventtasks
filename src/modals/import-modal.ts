@@ -3,6 +3,7 @@ import type InventTasksPlugin from "../main";
 import { BackupBundle, BackupList, BackupFolder, BackupSpace, ExportScope } from "../data/export";
 import { importBackup, ImportDestination, ImportResult, summarizeImport } from "../data/import";
 import { t } from "../i18n";
+import { fireAndForget } from "../utils/async";
 
 export interface ImportPreset {
   destination: ImportDestination;
@@ -60,32 +61,32 @@ export class ImportModal extends Modal {
     const input = fileRow.createEl("input", { type: "file", attr: { accept: ".json,application/json" } });
     input.hide();
     pick.addEventListener("click", () => input.click());
-    input.addEventListener("change", async () => {
+    input.addEventListener("change", fireAndForget(async () => {
       const f = input.files?.[0];
       if (!f) return;
       try {
         const text = await f.text();
-        const parsed = JSON.parse(text);
+        const parsed = JSON.parse(text) as BackupBundle | null | undefined;
         if (parsed?.format !== "inventtasks-backup") throw new Error(t("import.notBackup"));
-        this.bundle = parsed as BackupBundle;
+        this.bundle = parsed;
         this.destValue = "";
         this.render();
-      } catch (e: any) {
-        new Notice(t("import.readFailed", { msg: e?.message ?? String(e) }));
+      } catch (e) {
+        new Notice(t("import.readFailed", { msg: (e as Error | undefined)?.message ?? String(e) }));
       }
-    });
+    }));
 
     if (!this.bundle) return;
 
     const b = this.bundle;
     const info = c.createDiv({ cls: "it-import-info" });
-    info.createEl("div", {
+    info.createDiv({
       text: t("import.scope", {
         scope: b.scope,
         name: b.scopeName ? t("import.scopeName", { name: b.scopeName }) : "",
       }),
     });
-    info.createEl("div", { cls: "setting-item-description", text: t("import.tasksInBackup", { count: countTasks(b) }) });
+    info.createDiv({ cls: "setting-item-description", text: t("import.tasksInBackup", { count: countTasks(b) }) });
 
     if (this.preset && !this.preset.allowedScopes.includes(b.scope)) {
       c.createEl("p", {
@@ -124,7 +125,7 @@ export class ImportModal extends Modal {
     const footer = c.createDiv({ cls: "it-modal-footer" });
     footer.createEl("button", { text: t("common.cancel"), cls: "it-btn-ghost" }).addEventListener("click", () => this.close());
     const go = footer.createEl("button", { cls: "it-btn-primary", text: t("common.import") });
-    go.addEventListener("click", () => this.doImport());
+    go.addEventListener("click", () => void this.doImport());
   }
 
   private destLabel(scope: string): string {
@@ -181,8 +182,8 @@ export class ImportModal extends Modal {
       const res = await importBackup(this.plugin, this.bundle, dest);
       this.plugin.refreshViews();
       this.showResult(res);
-    } catch (e: any) {
-      new Notice(t("import.failed", { msg: e?.message ?? String(e) }));
+    } catch (e) {
+      new Notice(t("import.failed", { msg: (e as Error | undefined)?.message ?? String(e) }));
       this.busy = false;
     }
   }

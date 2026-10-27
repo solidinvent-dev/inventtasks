@@ -5,7 +5,7 @@ import { ContextLocation, TaskFile } from "../types";
 import {
   ExportScope, ReadableFormat, ImageMode,
   exportBackup, exportReadable, gatherScopeTasks, listsInScope,
-  buildScopeContext, defaultReadableColumns,
+  buildScopeContext, defaultReadableColumns, ReadableExportContext,
 } from "../data/export";
 
 export interface ExportModalOpts {
@@ -16,7 +16,7 @@ export interface ExportModalOpts {
   viewName?: string;
   viewTasks?: TaskFile[];
   viewCols?: string[];
-  viewCtx?: any;
+  viewCtx?: ReadableExportContext;
 }
 
 const READABLE_LABELS: Record<ReadableFormat, string> = {
@@ -69,7 +69,7 @@ export class ExportModal extends Modal {
   private readablePayload() {
     const o = this.opts;
     const tasks = o.viewTasks ?? gatherScopeTasks(this.plugin, o.scope, { path: o.path, taskId: o.taskId });
-    const ctx = o.viewCtx ?? buildScopeContext(this.plugin, listsInScope(this.plugin, o.scope, { path: o.path, taskId: o.taskId }), this.scopeLoc());
+    const ctx: ReadableExportContext = o.viewCtx ?? buildScopeContext(this.plugin, listsInScope(this.plugin, o.scope, { path: o.path, taskId: o.taskId }), this.scopeLoc());
     const cols = (o.viewCols && o.viewCols.length ? o.viewCols.slice() : defaultReadableColumns(ctx));
     if (!cols.includes("title")) cols.unshift("title");
     return { tasks, ctx, cols, name: this.scopeName() };
@@ -145,7 +145,7 @@ export class ExportModal extends Modal {
     const footer = c.createDiv({ cls: "it-modal-footer" });
     footer.createEl("button", { text: t("common.cancel"), cls: "it-btn-ghost" }).addEventListener("click", () => this.close());
     const go = footer.createEl("button", { cls: "it-btn-primary", text: this.kind === "backup" ? t("export.exportBackup") : t("common.export") });
-    go.addEventListener("click", () => this.doExport());
+    go.addEventListener("click", () => void this.doExport());
   }
 
   private async doExport() {
@@ -158,10 +158,10 @@ export class ExportModal extends Modal {
         await exportReadable({ plugin: this.plugin, format: this.format, scopeName: p.name, tasks: p.tasks, cols: p.cols, ctx: p.ctx, openPrint: this.openPrint, noteTask, imageMode: this.imageMode });
       }
       this.close();
-    } catch (e: any) {
+    } catch (e) {
       // Surface the error inline rather than closing.
       const c = this.contentEl;
-      c.createEl("p", { cls: "it-export-error", text: t("export.failed", { msg: e?.message ?? String(e) }) });
+      c.createEl("p", { cls: "it-export-error", text: t("export.failed", { msg: (e as Error | undefined)?.message ?? String(e) }) });
     }
   }
 }

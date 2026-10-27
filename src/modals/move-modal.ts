@@ -4,6 +4,7 @@ import { hierarchyLabel, t } from "../i18n";
 import { renderIconish } from "../ui/icons";
 import { DOC_ICON } from "../constants";
 import type { FolderNode, TaskFile } from "../types";
+import { fireAndForget } from "../utils/async";
 
 // ---------- Shared hierarchy picker ----------
 // Renders a search box + grouped, selectable list of destinations
@@ -241,7 +242,7 @@ export function renderHierarchyPicker(
   if (searchInput) {
     searchInput.addEventListener("input", () => {
       opts.onSelect(null);
-      render(searchInput!.value);
+      render(searchInput.value);
     });
   }
   return {
@@ -342,7 +343,7 @@ export class MoveFolderModal extends Modal {
 
     moveBtn = footer.createEl("button", { cls: "it-btn-primary", text: t("move.moveFolder") });
     moveBtn.disabled = true;
-    moveBtn.addEventListener("click", async () => {
+    moveBtn.addEventListener("click", fireAndForget(async () => {
       if (!this.selectedSpacePath) return;
       moveBtn.disabled = true;
       moveBtn.textContent = t("common.moving");
@@ -351,12 +352,12 @@ export class MoveFolderModal extends Modal {
         this.plugin.refreshViews();
         new Notice(t("move.folderMoved"));
         this.close();
-      } catch (err: any) {
-        new Notice(t("common.failed", { msg: err.message }));
+      } catch (err) {
+        new Notice(t("common.failed", { msg: (err as Error).message }));
         moveBtn.disabled = false;
         moveBtn.textContent = t("move.moveFolder");
       }
-    });
+    }));
   }
 }
 
@@ -419,7 +420,7 @@ export class MoveListModal extends Modal {
 
     moveBtn = footer.createEl("button", { cls: "it-btn-primary", text: t("move.moveList") });
     moveBtn.disabled = true;
-    moveBtn.addEventListener("click", async () => {
+    moveBtn.addEventListener("click", fireAndForget(async () => {
       if (!this.selectedTargetPath) return;
       moveBtn.disabled = true;
       moveBtn.textContent = t("common.moving");
@@ -428,12 +429,12 @@ export class MoveListModal extends Modal {
         this.plugin.refreshViews();
         new Notice(t("move.listMoved"));
         this.close();
-      } catch (err: any) {
-        new Notice(t("common.failed", { msg: err.message }));
+      } catch (err) {
+        new Notice(t("common.failed", { msg: (err as Error).message }));
         moveBtn.disabled = false;
         moveBtn.textContent = t("move.moveList");
       }
-    });
+    }));
   }
 }
 
@@ -499,7 +500,7 @@ export class MoveTaskModal extends Modal {
 
     moveBtn = footer.createEl("button", { cls: "it-btn-primary", text: t("move.moveTask") });
     moveBtn.disabled = true;
-    moveBtn.addEventListener("click", async () => {
+    moveBtn.addEventListener("click", fireAndForget(async () => {
       if (!this.selectedListPath) return;
       moveBtn.disabled = true;
       moveBtn.textContent = t("common.moving");
@@ -509,12 +510,12 @@ export class MoveTaskModal extends Modal {
         new Notice(t("move.taskMoved"));
         this.onMoved?.();
         this.close();
-      } catch (err: any) {
-        new Notice(t("common.failed", { msg: err.message }));
+      } catch (err) {
+        new Notice(t("common.failed", { msg: (err as Error).message }));
         moveBtn.disabled = false;
         moveBtn.textContent = t("move.moveTask");
       }
-    });
+    }));
   }
 }
 
@@ -593,7 +594,7 @@ export class MoveDocModal extends Modal {
 
     moveBtn = footer.createEl("button", { cls: "it-btn-primary", text: t("move.moveDoc") });
     moveBtn.disabled = true;
-    moveBtn.addEventListener("click", async () => {
+    moveBtn.addEventListener("click", fireAndForget(async () => {
       if (!this.selected) return;
       const targetKey = this.selected.kind === "folder" ? `folder:${this.selected.path}`
         : this.selected.kind === "list" ? `list:${this.selected.path}`
@@ -606,11 +607,11 @@ export class MoveDocModal extends Modal {
         new Notice(t("move.docMoved"));
         this.onMoved?.();
         this.close();
-      } catch (err: any) {
-        new Notice(t("common.failed", { msg: err.message }));
+      } catch (err) {
+        new Notice(t("common.failed", { msg: (err as Error).message }));
         moveBtn.disabled = false;
         moveBtn.textContent = t("move.moveDoc");
       }
-    });
+    }));
   }
 }

@@ -5,6 +5,7 @@ import { monthName, navLabel, t } from "../i18n";
 import { showPopover } from "../ui/components";
 import { cachedDateTimeFormat, todayKey } from "../utils/dates";
 import { ConfirmModal } from "../modals/confirm-modal";
+import { fireAndForget } from "../utils/async";
 import { clearHistory, mergeNotifHistory, type MergedHistoryEntry } from "../notifications/store";
 import { ensureNotifState } from "../data/workspace-state";
 import type { NotifChannel, NotifHistoryItem } from "../notifications/types";
@@ -266,11 +267,11 @@ function ensurePrefs(plugin: InventTasksPlugin): NotificationPrefs {
 }
 
 function reminderValues(task: TaskFile): string[] {
-  const raw = task.data as any;
+  const raw = task.data as unknown as { reminder_at?: unknown; reminders?: unknown };
   const out: string[] = [];
-  const push = (v: any) => {
+  const push = (v: unknown) => {
     if (typeof v === "string" && v.trim()) out.push(v.trim());
-    else if (v && typeof v === "object" && typeof v.at === "string") out.push(v.at);
+    else if (v && typeof v === "object" && typeof (v as { at?: unknown }).at === "string") out.push((v as { at: string }).at);
   };
   push(raw.reminder_at);
   if (Array.isArray(raw.reminders)) raw.reminders.forEach(push);
@@ -463,14 +464,14 @@ function markCleared(plugin: InventTasksPlugin, prefs: NotificationPrefs, item: 
       title: t("system.deleteTitle"),
       message: t("system.deleteMsg", { title: item.task.data.title || t("common.untitled") }),
       destructive: true,
-      onConfirm: async () => {
+      onConfirm: fireAndForget(async () => {
         delete prefs.snoozed[key];
         delete prefs.read[key];
         delete prefs.returned[key];
         delete prefs.dismissed[key];
         await plugin.index.deleteTask(item.task.data.id);
         await saveAndRefresh(plugin, rerender);
-      },
+      }),
     }).open();
     return;
   }
@@ -626,7 +627,7 @@ function clearAllHistory(plugin: InventTasksPlugin, rerender: () => void) {
     message: t("notifications.clearHistoryMsg"),
     destructive: true,
     confirmLabel: t("notifications.clearHistoryConfirm"),
-    onConfirm: async () => {
+    onConfirm: fireAndForget(async () => {
       // Tombstoned clear: the recorded clear time survives merges, so entries
       // from another device's not-yet-synced file can't resurrect, while every
       // NEW notification is recorded normally from the next send on.
@@ -636,7 +637,7 @@ function clearAllHistory(plugin: InventTasksPlugin, rerender: () => void) {
       }
       await plugin.saveSettings();
       rerender();
-    },
+    }),
   }).open();
 }
 
@@ -888,10 +889,10 @@ export function renderNotificationsView(opts: {
           message: t("trash.deleteForeverMsg", { name: item.title, extra: "" }),
           destructive: true,
           confirmLabel: t("trash.deleteForever"),
-          onConfirm: async () => {
+          onConfirm: fireAndForget(async () => {
             clearState(prefs, item.key);
             await saveAndRefresh(plugin, rerender);
-          },
+          }),
         }).open();
       });
     }

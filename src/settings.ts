@@ -26,14 +26,15 @@ import {
 } from "./notifications/types";
 import { NtfyChannel } from "./notifications/channels/ntfy";
 import { normalizeDigestTime } from "./notifications/engine";
-import { CalendarSyncPrefs } from "./calendar-sync/types";
+import { CalendarSyncFrequency, CalendarSyncPrefs } from "./calendar-sync/types";
 import { SyncSettings, makeSyncSettings } from "./sync/types";
 import { VaultSyncSettings, makeVaultSyncSettings } from "./vault-sync/types";
 import { overlappingWholeVaultRoot } from "./vault-sync/exclusions";
 import { SyncHistoryModal } from "./modals/sync-history-modal";
 import { SyncPathPickerModal } from "./modals/sync-path-picker-modal";
 import { testCalDav } from "./calendar-sync/caldav";
-import { makeIncrementalBackupSettings, type IncrementalBackupSettings } from "./data/incremental-backup";
+import { makeIncrementalBackupSettings, type BackupBodyMode, type BackupLocationMode, type IncrementalBackupSettings } from "./data/incremental-backup";
+import { fireAndForget } from "./utils/async";
 
 export interface ActivitySettings {
   showActivity: boolean;      // Show "Activity" section in task modal
@@ -238,23 +239,37 @@ export const DEFAULT_SETTINGS: PluginSettings = {
 // Google Calendar, Outlook and SMTP email were removed in 1.2.0. Their OAuth
 // tokens and the SMTP password are dropped on load so the next save rewrites
 // data.json without them, instead of carrying dead credentials forever.
-function withoutRemovedCalendarServices(calendar: any): CalendarSyncPrefs | undefined {
-  if (!calendar || typeof calendar !== "object") return calendar;
-  const { google: _google, outlook: _outlook, ...rest } = calendar;
+function withoutRemovedCalendarServices(calendar: unknown): CalendarSyncPrefs | undefined {
+  if (!calendar || typeof calendar !== "object") return calendar as CalendarSyncPrefs | undefined;
+  const { google: _google, outlook: _outlook, ...rest } = calendar as CalendarSyncPrefs & { google?: unknown; outlook?: unknown };
   return rest;
 }
 
-export function loadPluginSettings(raw: any): PluginSettings {
-  const data = raw || {};
+/** data.json as read from disk: any field may be missing or in an older shape. */
+interface StoredPluginSettings {
+  workspaces?: Partial<WorkspaceEntry>[];
+  activeWorkspaceId?: string;
+  language?: string;
+  lightBackground?: string;
+  darkBackground?: string;
+  calendarSync?: unknown;
+  ntfy?: PluginSettings["ntfy"];
+  account?: PluginSettings["account"];
+  seed?: unknown;
+  vaultSync?: Partial<VaultSyncSettings>;
+}
+
+export function loadPluginSettings(raw: unknown): PluginSettings {
+  const data = (raw || {}) as StoredPluginSettings;
   // An EMPTY workspaces array is a valid state (the user can run without the
   // task manager and use e.g. Vault Sync only) — only a missing/corrupt field
   // falls back to the default single workspace (fresh install).
   if (Array.isArray(data.workspaces)) {
-    const workspaces = data.workspaces.map((w: any) => makeWorkspaceEntry(w));
+    const workspaces = data.workspaces.map((w) => makeWorkspaceEntry(w));
     const activeWorkspaceId = workspaces.some((w: WorkspaceEntry) => w.id === data.activeWorkspaceId)
-      ? data.activeWorkspaceId
+      ? data.activeWorkspaceId as string
       : (workspaces[0]?.id ?? "");
-    const language = (["en", "pl", "de", "fr", "it", "es"] as const).includes(data.language)
+    const language = (["en", "pl", "de", "fr", "it", "es"] as const).includes(data.language as AppLanguage)
       ? data.language as AppLanguage
       : "en";
     const lightBackground = data.lightBackground === "white" ? "white" : "obsidian";
@@ -448,14 +463,14 @@ export class InventTasksSettingTab extends PluginSettingTab {
             new ConfirmModal(this.app, {
               title: t("confirm.startDataTitle"),
               message: t("confirm.startDataMsg"),
-              onConfirm: async () => {
+              onConfirm: fireAndForget(async () => {
                 try {
                   await this.plugin.generateStartData();
-                } catch (e: any) {
+                } catch (e) {
                   console.error("InventTasks start data failed", e);
-                  new Notice(t("notice.richDemoFailed", { msg: e?.message ?? String(e) }));
+                  new Notice(t("notice.richDemoFailed", { msg: (e as Error | undefined)?.message ?? String(e) }));
                 }
-              },
+              }),
             }).open();
           })
       );
@@ -471,14 +486,14 @@ export class InventTasksSettingTab extends PluginSettingTab {
             new ConfirmModal(this.app, {
               title: t("confirm.richDemoTitle"),
               message: t("confirm.richDemoMsg"),
-              onConfirm: async () => {
+              onConfirm: fireAndForget(async () => {
                 try {
                   await this.plugin.generateRichDemo();
-                } catch (e: any) {
+                } catch (e) {
                   console.error("InventTasks rich demo failed", e);
-                  new Notice(t("notice.richDemoFailed", { msg: e?.message ?? String(e) }));
+                  new Notice(t("notice.richDemoFailed", { msg: (e as Error | undefined)?.message ?? String(e) }));
                 }
-              },
+              }),
             }).open();
           })
       );
@@ -541,7 +556,7 @@ export class InventTasksSettingTab extends PluginSettingTab {
       new Setting(containerEl)
         .setName(t(nameKey))
         .addToggle((tog) => tog.setValue(ac()[key] as boolean).onChange(async (v) => {
-          (ac() as any)[key] = v; await this.plugin.saveSettings();
+          (ac() as unknown as Record<string, boolean>)[key] = v; await this.plugin.saveSettings();
         }));
     };
     logToggle("settings.logCreated", "log_created");
@@ -576,8 +591,8 @@ export class InventTasksSettingTab extends PluginSettingTab {
         d.addOption("UTC", "UTC");
         let zones: string[] = [];
         try {
-          const sv = (Intl as any).supportedValuesOf;
-          if (typeof sv === "function") zones = sv("timeZone") as string[];
+          const sv = (Intl as unknown as { supportedValuesOf?: (key: string) => string[] }).supportedValuesOf;
+          if (typeof sv === "function") zones = sv("timeZone");
         } catch { /* not available — use fallback list */ }
         if (!zones || zones.length === 0) {
           zones = [
@@ -714,14 +729,14 @@ export class InventTasksSettingTab extends PluginSettingTab {
         });
         picker.value = colors[i];
         col.createSpan({ cls: "it-scheme-label", text: VIEW_NAMES[i] });
-        picker.addEventListener("input", async (e) => {
+        picker.addEventListener("input", fireAndForget(async (e) => {
           const val = (e.target as HTMLInputElement).value;
           const current = resolveViewColors();
           current[i] = val;
           this.plugin.prefs.viewColors = current;
           await this.plugin.saveSettings();
           this.plugin.refreshViews();
-        });
+        }));
       }
     };
     renderSchemePreview();
@@ -758,28 +773,28 @@ export class InventTasksSettingTab extends PluginSettingTab {
 
         // Spaces / Folders / Lists grouped by parent so qualified names stay readable
         for (const space of this.plugin.index.spaces) {
-          const grp = document.createElement("optgroup");
+          const grp = createEl("optgroup");
           grp.label = t("settings.startupSpaceGroup", { name: space.config.name });
           // The space itself
-          const spaceOpt = document.createElement("option");
+          const spaceOpt = createEl("option");
           spaceOpt.value = `space:${space.path}`;
           spaceOpt.textContent = t("settings.startupWholeSpace", { name: space.config.name });
           grp.appendChild(spaceOpt);
           // Lists directly under the space
           for (const list of space.lists) {
-            const o = document.createElement("option");
+            const o = createEl("option");
             o.value = `list:${list.path}`;
             o.textContent = `  ${list.config.name}`;
             grp.appendChild(o);
           }
           // Folders + their lists
           for (const folder of space.folders) {
-            const folderOpt = document.createElement("option");
+            const folderOpt = createEl("option");
             folderOpt.value = `folder:${folder.path}`;
             folderOpt.textContent = `📁 ${folder.config.name}`;
             grp.appendChild(folderOpt);
             for (const list of folder.lists) {
-              const o = document.createElement("option");
+              const o = createEl("option");
               o.value = `list:${list.path}`;
               o.textContent = `   ${folder.config.name} / ${list.config.name}`;
               grp.appendChild(o);
@@ -923,7 +938,7 @@ export class InventTasksSettingTab extends PluginSettingTab {
     const startRecording = (id: string) => {
       recordingId = id;
       render();
-      const onKey = async (e: KeyboardEvent) => {
+      const onKey = fireAndForget(async (e: KeyboardEvent) => {
         e.preventDefault();
         e.stopPropagation();
         if (e.key === "Escape") { cleanup(); recordingId = null; render(); return; }
@@ -940,7 +955,7 @@ export class InventTasksSettingTab extends PluginSettingTab {
         }
         await this.setHotkey(id, combo);
         render();
-      };
+      });
       // Keys arrive in the settings window, which is its own window since
       // Obsidian 1.14 — listen there, not on the main window's document.
       const keyDoc = wrap.ownerDocument;
@@ -963,11 +978,11 @@ export class InventTasksSettingTab extends PluginSettingTab {
 
         const resetBtn = right.createEl("button", { cls: "it-icon-btn it-icon-btn-mini", attr: { title: t("common.resetDefault"), "aria-label": t("common.resetDefault") } });
         setIcon(resetBtn, "rotate-ccw");
-        resetBtn.addEventListener("click", async () => { cleanup(); recordingId = null; await this.setHotkey(action.id, undefined); render(); });
+        resetBtn.addEventListener("click", fireAndForget(async () => { cleanup(); recordingId = null; await this.setHotkey(action.id, undefined); render(); }));
 
         const clearBtn = right.createEl("button", { cls: "it-icon-btn it-icon-btn-mini", attr: { title: t("common.clear"), "aria-label": t("common.clear") } });
         setIcon(clearBtn, "x");
-        clearBtn.addEventListener("click", async () => { cleanup(); recordingId = null; await this.setHotkey(action.id, ""); render(); });
+        clearBtn.addEventListener("click", fireAndForget(async () => { cleanup(); recordingId = null; await this.setHotkey(action.id, ""); render(); }));
       }
     };
 
@@ -1009,7 +1024,7 @@ export class InventTasksSettingTab extends PluginSettingTab {
             message: t("confirm.removeVaultMsg", { name: ws.name, root: ws.workspaceRoot }),
             destructive: true,
             confirmLabel: t("common.remove"),
-            onConfirm: async () => {
+            onConfirm: fireAndForget(async () => {
               const wasActive = s.activeWorkspaceId === ws.id;
               const idx = s.workspaces.findIndex((w) => w.id === ws.id);
               if (idx >= 0) s.workspaces.splice(idx, 1);
@@ -1022,7 +1037,7 @@ export class InventTasksSettingTab extends PluginSettingTab {
               if (!this.plugin.hasWorkspaces) this.plugin.refreshViews();
               this.plugin.refreshBackgroundServices();
               this.display();
-            },
+            }),
           }).open();
         })
       );
@@ -1044,12 +1059,12 @@ export class InventTasksSettingTab extends PluginSettingTab {
           renderIconish(b.buttonEl, ws.icon || "check-square", { cls: "it-ws-icon-prev" });
           b.buttonEl.createSpan({ text: t("settings.changeIcon") });
           b.onClick(() =>
-            openIconPicker(b.buttonEl, ws.icon, async (icon) => {
+            openIconPicker(b.buttonEl, ws.icon, fireAndForget(async (icon) => {
               ws.icon = icon;
               await this.plugin.saveSettings();
               this.plugin.rebuildRibbons();
               this.display();
-            })
+            }))
           );
         });
 
@@ -1503,7 +1518,7 @@ export class InventTasksSettingTab extends PluginSettingTab {
           .addOption("vault", t("backup.locationVault"));
         d.setValue(backup.locationMode);
         d.onChange(async (value) => {
-          backup.locationMode = value as any;
+          backup.locationMode = value as BackupLocationMode;
           await this.saveAndRefreshBackup();
           this.display();
         });
@@ -1550,7 +1565,7 @@ export class InventTasksSettingTab extends PluginSettingTab {
         .addOption("never", t("backup.bodyNever"))
         .setValue(backup.includeMarkdownBody)
         .onChange(async (value) => {
-          backup.includeMarkdownBody = value as any;
+          backup.includeMarkdownBody = value as BackupBodyMode;
           await this.saveAndRefreshBackup();
         }));
 
@@ -1578,8 +1593,8 @@ export class InventTasksSettingTab extends PluginSettingTab {
             }), 15000);
           }
           this.display();
-        } catch (e: any) {
-          new Notice(t("backup.snapshotFailed", { msg: e?.message ?? String(e) }));
+        } catch (e) {
+          new Notice(t("backup.snapshotFailed", { msg: (e as Error | undefined)?.message ?? String(e) }));
         }
       }))
       .addButton((b) => b.setButtonText(t("backup.restore")).onClick(() => new IncrementalBackupRestoreModal(this.app, this.plugin).open()));
@@ -1605,7 +1620,7 @@ export class InventTasksSettingTab extends PluginSettingTab {
       titles.createDiv({ cls: "it-activation-title", text: t("license.inactiveTitle") });
       const sub = titles.createDiv({ cls: "it-activation-sub" });
       sub.appendText(t("license.freePlanPrefix"));
-      sub.createEl("span", { cls: "it-activation-limits", text: t("license.inactiveLimits", { s: freeLimit(0), l: freeLimit(1), tk: freeLimit(2) }) });
+      sub.createSpan({ cls: "it-activation-limits", text: t("license.inactiveLimits", { s: freeLimit(0), l: freeLimit(1), tk: freeLimit(2) }) });
       sub.appendText(". " + t("license.inactivePromo"));
     }
 
@@ -1649,7 +1664,7 @@ export class InventTasksSettingTab extends PluginSettingTab {
       text: active ? t("license.reactivate") : t("license.activate"),
     });
     paintBtn(activateBtn, active ? "outline" : "red");
-    activateBtn.addEventListener("click", async () => {
+    activateBtn.addEventListener("click", fireAndForget(async () => {
       const id = emailVal.trim().toLowerCase();
       const token = keyVal.trim();
       // Manual activation: the key is validated offline, then — when online —
@@ -1667,7 +1682,7 @@ export class InventTasksSettingTab extends PluginSettingTab {
         new Notice(t("license.ok"));
         this.display();
       }
-    });
+    }));
 
     // The upsell is always available: when inactive it's the headline action;
     // when active it offers Pro for a *different* email (a separate license).
@@ -1680,13 +1695,13 @@ export class InventTasksSettingTab extends PluginSettingTab {
 
     if (active) {
       const remove = actions.createEl("button", { cls: "it-btn-ghost it-activation-remove", text: t("license.remove") });
-      remove.addEventListener("click", async () => {
+      remove.addEventListener("click", fireAndForget(async () => {
         this.plugin.settings.account = undefined;
         setLicense(undefined, undefined);
         await this.plugin.saveSettings();
         this.plugin.refreshViews();
         this.display();
-      });
+      }));
     }
 
     // Pricing model, stated plainly so repeat purchases of one email aren't a surprise.
@@ -1706,7 +1721,7 @@ export class InventTasksSettingTab extends PluginSettingTab {
     };
     const workspaceNameForRoot = (root: string | undefined) =>
       this.plugin.settings.workspaces.find((ws) => rootOf(ws.workspaceRoot) === rootOf(root))?.name || rootOf(root);
-    const diagnostics = indexes.map((index: any) => ({ index, name: workspaceNameForRoot(index.rootPath), diag: index.diagnostics?.() }));
+    const diagnostics = indexes.map((index) => ({ index, name: workspaceNameForRoot(index.rootPath), diag: index.diagnostics?.() }));
     const workspaceStateIssues = this.plugin.workspaceStateIssues || [];
     const calError = this.plugin.settings.calendarSync?.lastSyncError;
     const calWarning = this.plugin.settings.calendarSync?.lastSyncWarning;
@@ -1751,7 +1766,7 @@ export class InventTasksSettingTab extends PluginSettingTab {
       value: activeState?.lastDigestDate ? `${activeState.lastDigestDate} ${activeState.lastDigestTime || ""}`.trim() : "—",
     }) });
 
-    const duplicateTaskIds = diagnostics.flatMap(({ name, diag }) => (diag?.duplicateTaskIds || []).map((i: any) => ({ ...i, workspaceName: name })));
+    const duplicateTaskIds = diagnostics.flatMap(({ name, diag }) => (diag?.duplicateTaskIds || []).map((i) => ({ ...i, workspaceName: name })));
     if (duplicateTaskIds.length) {
       new Setting(containerEl)
         .setName(t("health.duplicateIds"))
@@ -1846,7 +1861,7 @@ export class InventTasksSettingTab extends PluginSettingTab {
             new Notification("InventTasks — Test", {
               body: t("extNotif.testOk"),
               requireInteraction: true,
-            } as NotificationOptions & { requireInteraction?: boolean });
+            });
             new Notice(t("extNotif.testOk"));
           } else {
             new Notice(t("extNotif.system.denied"));
@@ -1932,7 +1947,7 @@ export class InventTasksSettingTab extends PluginSettingTab {
         { mins: 1440, label: t("extNotif.reminder.1d") },
       ];
       const timingEl = containerEl.createDiv({ cls: "setting-item" });
-      timingEl.createDiv({ cls: "setting-item-info" }).createEl("div", {
+      timingEl.createDiv({ cls: "setting-item-info" }).createDiv({
         cls: "setting-item-name",
         text: t("extNotif.triggers.reminderTimings"),
       });
@@ -1942,12 +1957,12 @@ export class InventTasksSettingTab extends PluginSettingTab {
         const chk = label.createEl("input", { type: "checkbox" });
         chk.checked = cfg.triggers.before_due.minutesBefore.includes(timing.mins);
         label.createSpan({ text: " " + timing.label });
-        chk.addEventListener("change", async () => {
+        chk.addEventListener("change", fireAndForget(async () => {
           const next = cfg.triggers.before_due.minutesBefore.filter((m) => m !== timing.mins);
           if (chk.checked) next.push(timing.mins);
           cfg.triggers.before_due.minutesBefore = next.sort((a, b) => a - b);
           await this.save();
-        });
+        }));
       }
       renderChannelPicker(containerEl, cfg.triggers.before_due);
     }
@@ -2124,7 +2139,7 @@ export class InventTasksSettingTab extends PluginSettingTab {
     // inherited by task location.
     const groups = ["not_started", "active"];
     const statusEl = containerEl.createDiv({ cls: "setting-item" });
-    statusEl.createDiv({ cls: "setting-item-info" }).createEl("div", {
+    statusEl.createDiv({ cls: "setting-item-info" }).createDiv({
       cls: "setting-item-name", text: t("calSync.scope.statusGroups"),
     });
     const statusControls = statusEl.createDiv({ cls: "setting-item-control" });
@@ -2133,13 +2148,13 @@ export class InventTasksSettingTab extends PluginSettingTab {
       const chk = label.createEl("input", { type: "checkbox" });
       chk.checked = cal.scope.statusGroups.includes(grp);
       label.createSpan({ text: " " + t(`calSync.scope.sg.${grp}`) });
-      chk.addEventListener("change", async () => {
+      chk.addEventListener("change", fireAndForget(async () => {
         let sgs = [...cal.scope.statusGroups];
         if (chk.checked && !sgs.includes(grp)) sgs.push(grp);
         else sgs = sgs.filter((s) => s !== grp);
         cal.scope.statusGroups = sgs;
         await this.save();
-      });
+      }));
     }
     containerEl.createEl("p", { text: t("calSync.scope.doneRemovedNote"), cls: "setting-item-description" });
 
@@ -2182,7 +2197,7 @@ export class InventTasksSettingTab extends PluginSettingTab {
         d.addOption("1hour", t("calSync.freq.1hour"));
         d.setValue(cal.frequency);
         d.onChange(async (v) => {
-          cal.frequency = v as any;
+          cal.frequency = v as CalendarSyncFrequency;
           await this.save();
           this.plugin.calendarSyncManager?.restart();
         });
@@ -2199,8 +2214,8 @@ export class InventTasksSettingTab extends PluginSettingTab {
             await this.plugin.syncNow();
             const warning = this.plugin.syncWarningMessage();
             new Notice(warning ? t("calSync.syncDoneWithWarnings", { message: warning }) : t("calSync.syncDone"));
-          } catch (e: any) {
-            new Notice(`${t("calSync.syncFailed")}: ${e?.message || e}`);
+          } catch (e) {
+            new Notice(`${t("calSync.syncFailed")}: ${(e as Error | undefined)?.message || e}`);
           }
           b.setDisabled(false);
           b.setButtonText(t("calSync.syncNowBtn"));
@@ -2240,8 +2255,8 @@ export class InventTasksSettingTab extends PluginSettingTab {
           try {
             await this.plugin.syncAllCalendars(); // global sync across all workspaces
             new Notice(t("calSync.ics.generated"));
-          } catch (e: any) {
-            new Notice(`${t("calSync.syncFailed")}: ${e?.message || e}`);
+          } catch (e) {
+            new Notice(`${t("calSync.syncFailed")}: ${(e as Error | undefined)?.message || e}`);
           }
           b.setDisabled(false);
         })

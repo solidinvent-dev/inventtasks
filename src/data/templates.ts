@@ -9,6 +9,7 @@ import { Notice, normalizePath, TFile } from "obsidian";
 import type InventTasksPlugin from "../main";
 import { t } from "../i18n";
 import { ExportScope, BackupBundle, buildBackup } from "./export";
+import type { BackupTask, BackupList, BackupFolder, BackupSpace, BackupRawFile } from "./export";
 import { importBackup, ImportDestination, ImportResult } from "./import";
 import { slugify } from "../utils/slug";
 
@@ -39,14 +40,14 @@ function templatesDir(plugin: InventTasksPlugin): string {
 export async function loadTemplates(plugin: InventTasksPlugin): Promise<void> {
   cache = [];
   const dir = templatesDir(plugin);
-  const adapter: any = plugin.app.vault.adapter;
+  const adapter = plugin.app.vault.adapter;
   try {
     if (!(await adapter.exists(dir))) return;
     const listing = await adapter.list(dir);
-    for (const f of listing.files as string[]) {
+    for (const f of listing.files) {
       if (!f.endsWith(".json")) continue;
       try {
-        const parsed = JSON.parse(await adapter.read(f));
+        const parsed = JSON.parse(await adapter.read(f)) as Partial<TemplateFile> | null;
         if (parsed?.format === "inventtasks-template" && parsed.bundle) {
           parsed.__path = f;
           cache.push(parsed as TemplateFile);
@@ -73,9 +74,9 @@ export interface TemplateStats { spaces: number; folders: number; lists: number;
 export function templateStats(tpl: TemplateFile): TemplateStats {
   const b = tpl.bundle;
   const s: TemplateStats = { spaces: 0, folders: 0, lists: 0, tasks: 0, views: 0 };
-  const cntList = (bl: any) => { s.lists++; s.tasks += bl.tasks?.length || 0; s.views += bl.views?.length || 0; };
-  const cntFolder = (bf: any) => { s.folders++; s.views += bf.views?.length || 0; (bf.lists || []).forEach(cntList); };
-  const cntSpace = (bs: any) => { s.spaces++; s.views += bs.views?.length || 0; (bs.folders || []).forEach(cntFolder); (bs.lists || []).forEach(cntList); };
+  const cntList = (bl: BackupList) => { s.lists++; s.tasks += bl.tasks?.length || 0; s.views += bl.views?.length || 0; };
+  const cntFolder = (bf: BackupFolder) => { s.folders++; s.views += bf.views?.length || 0; (bf.lists || []).forEach(cntList); };
+  const cntSpace = (bs: BackupSpace) => { s.spaces++; s.views += bs.views?.length || 0; (bs.folders || []).forEach(cntFolder); (bs.lists || []).forEach(cntList); };
   if (b.spaces) b.spaces.forEach(cntSpace);
   if (b.space) cntSpace(b.space);
   if (b.folder) cntFolder(b.folder);
@@ -100,7 +101,7 @@ export async function updateTemplate(
   patch: { name?: string; description?: string; icon?: string },
 ): Promise<void> {
   if (!tpl.__path) return;
-  const next: any = { ...tpl, ...patch };
+  const next: Partial<TemplateFile> = { ...tpl, ...patch };
   if (patch.name !== undefined) next.name = patch.name.trim() || tpl.name;
   if (patch.description !== undefined) next.description = patch.description.trim() || undefined;
   delete next.__path;
@@ -215,7 +216,8 @@ export function defaultSelection(): ElementSelection {
   };
 }
 
-function stripConfig(cfg: any, sel: ElementSelection) {
+function stripConfig(config: object, sel: ElementSelection) {
+  const cfg = config as Record<string, unknown>;
   for (const k of CONFIG_SET_KEYS) if (!sel.configSections.has(k)) delete cfg[k];
   if (!sel.configSections.has("notifications_enabled")) {
     delete cfg.notify_system;
@@ -229,10 +231,10 @@ function stripConfig(cfg: any, sel: ElementSelection) {
 
 // Returns a new bundle filtered by the selection.
 export function pruneBundle(bundle: BackupBundle, sel: ElementSelection): BackupBundle {
-  const b: any = JSON.parse(JSON.stringify(bundle));
+  const b = JSON.parse(JSON.stringify(bundle)) as BackupBundle;
   const has = (k: string) => sel.taskFields.has(k);
-  const taskKept = (t: any) => !sel.excluded.has(`t:${t.data.id}`);
-  const pruneTask = (t: any) => {
+  const taskKept = (t: BackupTask) => !sel.excluded.has(`t:${t.data.id}`);
+  const pruneTask = (t: BackupTask) => {
     const d = t.data;
     if (!has("description")) t.body = "";
     if (!has("status")) { delete d.status; delete d.status_group; }
@@ -253,26 +255,26 @@ export function pruneBundle(bundle: BackupBundle, sel: ElementSelection): Backup
     if (!has("recurring")) delete d.recurring;
     return t;
   };
-  const pruneList = (bl: any) => {
+  const pruneList = (bl: BackupList) => {
     bl.tasks = (bl.tasks || []).filter(taskKept).map(pruneTask);
     if (!sel.views) bl.views = [];
     stripConfig(bl.config, sel);
     return bl;
   };
-  const pruneFolder = (bf: any) => {
-    bf.lists = (bf.lists || []).filter((l: any) => !sel.excluded.has(`l:${l.srcPath}`)).map(pruneList);
+  const pruneFolder = (bf: BackupFolder) => {
+    bf.lists = (bf.lists || []).filter((l: BackupList) => !sel.excluded.has(`l:${l.srcPath}`)).map(pruneList);
     if (!sel.views) bf.views = [];
     stripConfig(bf.config, sel);
     return bf;
   };
-  const pruneSpace = (bs: any) => {
-    bs.folders = (bs.folders || []).filter((f: any) => !sel.excluded.has(`f:${f.srcPath}`)).map(pruneFolder);
-    bs.lists = (bs.lists || []).filter((l: any) => !sel.excluded.has(`l:${l.srcPath}`)).map(pruneList);
+  const pruneSpace = (bs: BackupSpace) => {
+    bs.folders = (bs.folders || []).filter((f: BackupFolder) => !sel.excluded.has(`f:${f.srcPath}`)).map(pruneFolder);
+    bs.lists = (bs.lists || []).filter((l: BackupList) => !sel.excluded.has(`l:${l.srcPath}`)).map(pruneList);
     if (!sel.views) bs.views = [];
     stripConfig(bs.config, sel);
     return bs;
   };
-  if (b.spaces) b.spaces = b.spaces.filter((s: any) => !sel.excluded.has(`s:${s.srcPath}`)).map(pruneSpace);
+  if (b.spaces) b.spaces = b.spaces.filter((s: BackupSpace) => !sel.excluded.has(`s:${s.srcPath}`)).map(pruneSpace);
   if (b.space) b.space = pruneSpace(b.space);
   if (b.folder) b.folder = pruneFolder(b.folder);
   if (b.list) b.list = pruneList(b.list);
@@ -284,22 +286,22 @@ export function pruneBundle(bundle: BackupBundle, sel: ElementSelection): Backup
   if (!sel.views) b.globalViews = [];
   if (Array.isArray(b.rawFiles)) {
     const keptTaskIds = new Set<string>();
-    const addTaskIds = (tasks: any[]) => tasks.forEach((t) => t?.data?.id && keptTaskIds.add(t.data.id));
-    const walkList = (bl: any) => addTaskIds(bl.tasks || []);
-    const walkFolder = (bf: any) => (bf.lists || []).forEach(walkList);
-    const walkSpace = (bs: any) => { (bs.folders || []).forEach(walkFolder); (bs.lists || []).forEach(walkList); };
+    const addTaskIds = (tasks: BackupTask[]) => tasks.forEach((t) => t?.data?.id && keptTaskIds.add(t.data.id));
+    const walkList = (bl: BackupList) => addTaskIds(bl.tasks || []);
+    const walkFolder = (bf: BackupFolder) => (bf.lists || []).forEach(walkList);
+    const walkSpace = (bs: BackupSpace) => { (bs.folders || []).forEach(walkFolder); (bs.lists || []).forEach(walkList); };
     (b.spaces || []).forEach(walkSpace);
     if (b.space) walkSpace(b.space);
     if (b.folder) walkFolder(b.folder);
     if (b.list) walkList(b.list);
     if (b.task) addTaskIds([b.task]);
     addTaskIds(b.task_subtasks || []);
-    b.rawFiles = b.rawFiles.filter((f: any) => {
+    b.rawFiles = b.rawFiles.filter((f: BackupRawFile) => {
       if (f.kind === "attachment" && !sel.taskFields.has("attachments")) return false;
       if (f.kind === "doc" && !sel.taskFields.has("documents")) return false;
       const m = String(f.path || "").match(/(?:^|\/)_attachments\/([^/]+)\//);
       return !m || keptTaskIds.has(m[1]);
     });
   }
-  return b as BackupBundle;
+  return b;
 }

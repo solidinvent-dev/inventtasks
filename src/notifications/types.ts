@@ -83,7 +83,7 @@ export function defaultWorkspaceNotifConfig(): WorkspaceNotifConfig {
 export function normalizeWorkspaceNotifConfig(partial?: Partial<WorkspaceNotifConfig>): WorkspaceNotifConfig {
   const def = defaultWorkspaceNotifConfig();
   const channels = (list: unknown): NotifChannel[] | undefined =>
-    Array.isArray(list) ? (list.filter((c) => NOTIF_CHANNELS.includes(c)) as NotifChannel[]) : undefined;
+    Array.isArray(list) ? (list.filter((c) => NOTIF_CHANNELS.includes(c as NotifChannel)) as NotifChannel[]) : undefined;
   const trigger = <T extends TriggerConfig>(def: T, raw?: Partial<T>): T => ({
     ...def,
     ...(raw || {}),
@@ -103,7 +103,7 @@ export function normalizeWorkspaceNotifConfig(partial?: Partial<WorkspaceNotifCo
       before_due: {
         ...trigger(def.triggers.before_due, rawTriggers?.before_due),
         minutesBefore: Array.isArray(rawTriggers?.before_due?.minutesBefore)
-          ? rawTriggers!.before_due!.minutesBefore!.filter((m) => Number.isFinite(m) && m > 0)
+          ? rawTriggers.before_due.minutesBefore.filter((m) => Number.isFinite(m) && m > 0)
           : def.triggers.before_due.minutesBefore,
       },
       started: trigger(def.triggers.started, rawTriggers?.started),

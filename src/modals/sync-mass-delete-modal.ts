@@ -67,7 +67,7 @@ export class SyncMassDeleteModal extends Modal {
       const row = c.createDiv({ cls: "it-bootstrap-option" });
       const btn = row.createEl("button", { text: label, cls });
       btn.addEventListener("click", () => this.choose(choice));
-      row.createEl("div", { cls: "it-bootstrap-option-desc", text: desc });
+      row.createDiv({ cls: "it-bootstrap-option-desc", text: desc });
     };
 
     option(t("sync.massDeleteRestore"), t("sync.massDeleteRestoreDesc"), "restoreServer", "it-btn-primary");

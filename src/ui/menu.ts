@@ -12,6 +12,11 @@ export interface MenuAction {
 
 export type MenuItem = MenuAction | "separator";
 
+// Expando holding the listener teardown for the open menu.
+interface MenuWithCleanup extends HTMLElement {
+  _cleanup?: () => void;
+}
+
 let activeMenu: HTMLElement | null = null;
 
 /**
@@ -112,7 +117,7 @@ export function showContextMenu(e: MouseEvent, items: MenuItem[]): void {
     doc.addEventListener("keydown", onEscape, { capture: true });
   }, 0);
 
-  (menu as any)._cleanup = () => {
+  (menu as MenuWithCleanup)._cleanup = () => {
     doc.removeEventListener("mousedown", onOutside, { capture: true });
     doc.removeEventListener("keydown", onEscape, { capture: true });
   };
@@ -120,7 +125,7 @@ export function showContextMenu(e: MouseEvent, items: MenuItem[]): void {
 
 function dismissActiveMenu() {
   if (!activeMenu) return;
-  (activeMenu as any)._cleanup?.();
+  (activeMenu as MenuWithCleanup)._cleanup?.();
   activeMenu.remove();
   activeMenu = null;
 }

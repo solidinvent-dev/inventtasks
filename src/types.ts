@@ -492,7 +492,7 @@ export interface TaskData {
 
   tags?: string[];
   context?: string[];
-  custom_fields?: Record<string, any>;
+  custom_fields?: Record<string, unknown>;
   relationships?: TaskRelationships;
   documents?: string[];   // linked Doc ids (built-in "Documents" field)
   attachments?: TaskAttachment[];
@@ -532,7 +532,7 @@ export type FilterLogic = "AND" | "OR";
 export interface FilterCondition {
   field: string;
   operator: string;
-  value: any;
+  value: unknown;
   unit?: string;
 }
 
