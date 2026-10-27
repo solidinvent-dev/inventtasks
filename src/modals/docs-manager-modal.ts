@@ -46,7 +46,7 @@ export class DocsManagerModal extends Modal {
     const search = searchWrap.createEl("input", { type: "text", cls: "it-move-modal-search", attr: { placeholder: t("modal.docsSearch") } });
     search.value = this.query;
     search.addEventListener("input", () => { this.query = search.value; this.renderList(); });
-    setTimeout(() => search.focus(), 0);
+    window.setTimeout(() => search.focus(), 0);
 
     this.listEl = c.createDiv({ cls: "it-move-modal-list" });
     this.renderList();

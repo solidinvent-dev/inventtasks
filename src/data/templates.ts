@@ -111,7 +111,7 @@ export async function updateTemplate(
 export async function deleteTemplate(plugin: InventTasksPlugin, tpl: TemplateFile): Promise<void> {
   if (!tpl.__path) return;
   const f = plugin.app.vault.getAbstractFileByPath(tpl.__path);
-  if (f instanceof TFile) await plugin.app.vault.trash(f, true);
+  if (f instanceof TFile) await plugin.app.fileManager.trashFile(f);
   await loadTemplates(plugin);
 }
 

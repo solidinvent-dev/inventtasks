@@ -1,5 +1,5 @@
 import { App, Modal, setIcon } from "obsidian";
-import { FilterCondition, FilterGroup, FilterLogic } from "../types";
+import { FilterCondition, FilterGroup } from "../types";
 import { showPopover, buildDropdown } from "../ui/components";
 import { renderIconish } from "../ui/icons";
 import { t } from "../i18n";

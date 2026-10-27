@@ -1,10 +1,10 @@
-import { setIcon, Notice, Platform } from "obsidian";
+import { Notice, Platform } from "obsidian";
 import type InventTasksPlugin from "../main";
 import { TaskFile, StatusDef, PriorityDef, CustomFieldDef } from "../types";
 import { renderCustomFieldValue } from "../ui/cf-render";
 import { ViewState } from "./main-view";
 import { groupTasks, GroupBucket } from "../data/filters";
-import { statusChip, priorityChip, tagChip, dueDateChip, applyChipStyleByKind, chipKindForGroupBy, renderGroupHeaderChip, renderListReference } from "../ui/components";
+import { statusChip, priorityChip, tagChip, applyChipStyleByKind, chipKindForGroupBy, renderGroupHeaderChip, renderListReference } from "../ui/components";
 import { isOverdue, formatDate } from "../utils/dates";
 import { renderIconish, renderCfTypeIcon } from "../ui/icons";
 import { QuickTaskModal } from "../modals/create-modals";

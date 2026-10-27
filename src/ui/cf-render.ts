@@ -7,7 +7,7 @@
 // because views are dense; the modal does the full controls.
 
 import { setIcon } from "obsidian";
-import type { CustomFieldDef, CustomFieldOption, LinkedValue, LocationValue, ResolvedChipStyles, TaskAttachment, TaskFile } from "../types";
+import type { CustomFieldDef, CustomFieldOption, LinkedValue, ResolvedChipStyles, TaskAttachment, TaskFile } from "../types";
 import type { WorkspaceIndex } from "../data/workspace-index";
 import { applyChipStyleByKind } from "./components";
 import { renderCfTypeIcon } from "./icons";

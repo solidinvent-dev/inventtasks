@@ -81,7 +81,7 @@ export function renderElementSelector(parent: HTMLElement, bundle: BackupBundle,
     const prevTreeScroll = (parent.querySelector(".it-tpl-sel-tree") as HTMLElement | null)?.scrollTop ?? 0;
     const restoreTree = () => {
       const t = parent.querySelector(".it-tpl-sel-tree") as HTMLElement | null;
-      if (t && prevTreeScroll > 0) { t.scrollTop = prevTreeScroll; requestAnimationFrame(() => { t.scrollTop = prevTreeScroll; }); }
+      if (t && prevTreeScroll > 0) { t.scrollTop = prevTreeScroll; window.requestAnimationFrame(() => { t.scrollTop = prevTreeScroll; }); }
     };
     parent.empty();
     parent.addClass("it-tpl-sel");
@@ -342,7 +342,7 @@ export class TemplateManagerModal extends Modal {
       meta.createDiv({ cls: "it-tpl-mgr-row-sub", text: `${t.level} · ${templateSummaryText(t)}` });
       row.addEventListener("click", () => { this.selectedId = t.template_id; this.editing = false; this.render(); });
     }
-    if (prevListScroll > 0) { list.scrollTop = prevListScroll; requestAnimationFrame(() => { list.scrollTop = prevListScroll; }); }
+    if (prevListScroll > 0) { list.scrollTop = prevListScroll; window.requestAnimationFrame(() => { list.scrollTop = prevListScroll; }); }
 
     // ---- right: preview / edit ----
     const pane = wrap.createDiv({ cls: "it-tpl-mgr-pane" });

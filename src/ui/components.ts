@@ -317,7 +317,7 @@ export function showPopover(target: HTMLElement, build: (root: HTMLElement) => v
       doc.removeEventListener("keydown", esc, true);
     }
   };
-  setTimeout(() => {
+  window.setTimeout(() => {
     doc.addEventListener("mousedown", closer, true);
     doc.addEventListener("keydown", esc, true);
   }, 0);

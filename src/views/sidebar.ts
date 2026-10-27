@@ -140,7 +140,7 @@ export function renderSidebar(parent: HTMLElement, opts: SidebarOptions) {
   // docked). Re-rendering in place (e.g. expand/collapse) empties it and would
   // reset the scroll — capture and restore it after the synchronous rebuild.
   const prevScroll = parent.scrollTop;
-  if (prevScroll > 0) requestAnimationFrame(() => { parent.scrollTop = prevScroll; });
+  if (prevScroll > 0) window.requestAnimationFrame(() => { parent.scrollTop = prevScroll; });
   parent.empty();
   parent.addClass("it-sidebar");
 
@@ -665,7 +665,7 @@ function promptRename(anchor: HTMLElement, initial: string, placeholder: string,
       if (ev.key === "Enter") { ev.preventDefault(); submit(); }
       else if (ev.key === "Escape") { ev.preventDefault(); close(); }
     });
-    requestAnimationFrame(() => input.focus());
+    window.requestAnimationFrame(() => input.focus());
   });
 }
 

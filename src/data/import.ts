@@ -6,7 +6,7 @@
 //     remapped task ids (parent_task, relationships, relationship custom
 //     fields, additional_lists) so the imported graph stays consistent.
 
-import { normalizePath } from "obsidian";
+import { TFile, normalizePath } from "obsidian";
 import { t } from "../i18n";
 import type InventTasksPlugin from "../main";
 import { TaskData, ViewConfig } from "../types";
@@ -96,6 +96,9 @@ export async function importBackup(
     for (const path of createdPaths.slice().sort((a, b) => b.length - a.length)) {
       const af = plugin.app.vault.getAbstractFileByPath(path);
       if (!af) continue;
+      // Rolling back files this import itself just created: they never were the
+      // user's, so they are removed outright rather than filling their trash.
+      // undoing our own writes, not deleting user files
       try { await plugin.app.vault.delete(af, true); } catch { /* best-effort rollback */ }
     }
   };
@@ -249,8 +252,9 @@ export async function importBackup(
       if (raw.encoding === "base64") {
         const bytes = Buffer.from(raw.data, "base64");
         const existing = plugin.app.vault.getAbstractFileByPath(path);
-        if (existing) await plugin.app.vault.delete(existing, true);
-        if ((plugin.app.vault as any).createBinary) await (plugin.app.vault as any).createBinary(path, bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength));
+        // Overwrite in place: replacing a file is not deleting it.
+        if (existing instanceof TFile) await plugin.app.vault.modifyBinary(existing, bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength));
+        else if ((plugin.app.vault as any).createBinary) await (plugin.app.vault as any).createBinary(path, bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength));
         else await (plugin.app.vault.adapter as any).writeBinary(path, bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength));
       } else {
         await writeTrackedFile(path, raw.kind === "doc" ? restampDoc(raw.data) : raw.data);

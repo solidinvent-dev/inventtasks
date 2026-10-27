@@ -981,13 +981,22 @@ export default class InventTasksPlugin extends Plugin {
 
   getStartupReveal(): "inventtasks" | "restore" {
     try {
-      return window.localStorage.getItem(InventTasksPlugin.STARTUP_REVEAL_KEY) === "restore"
-        ? "restore" : "inventtasks";
+      let value: unknown = this.app.loadLocalStorage(InventTasksPlugin.STARTUP_REVEAL_KEY);
+      if (value == null) {
+        // Up to 1.2.1 this lived in window.localStorage; carry it over once.
+        const legacy = window.localStorage.getItem(InventTasksPlugin.STARTUP_REVEAL_KEY);
+        if (legacy) {
+          this.app.saveLocalStorage(InventTasksPlugin.STARTUP_REVEAL_KEY, legacy);
+          window.localStorage.removeItem(InventTasksPlugin.STARTUP_REVEAL_KEY);
+          value = legacy;
+        }
+      }
+      return value === "restore" ? "restore" : "inventtasks";
     } catch { return "inventtasks"; }
   }
 
   setStartupReveal(value: "inventtasks" | "restore"): void {
-    try { window.localStorage.setItem(InventTasksPlugin.STARTUP_REVEAL_KEY, value); } catch { /* ignore */ }
+    try { this.app.saveLocalStorage(InventTasksPlugin.STARTUP_REVEAL_KEY, value); } catch { /* ignore */ }
   }
 
   // Copy a shareable link to the given element. Vault + active workspace are
@@ -1098,6 +1107,9 @@ export default class InventTasksPlugin extends Plugin {
     if (!mv.navigateToElement(link)) new Notice(t("deepLink.notFound"));
   }
 
+  // The pending deep link deliberately uses window.localStorage, not
+  // App.saveLocalStorage: it is the hand-off from one vault to another, and
+  // Obsidian's storage is scoped per vault, so the target vault could not read it.
   private stashPendingDeepLink(link: DeepLinkParams) {
     try {
       window.localStorage.setItem(

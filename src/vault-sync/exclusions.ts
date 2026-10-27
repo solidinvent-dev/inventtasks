@@ -106,7 +106,7 @@ const inSubtree = (rel: string, root: string): boolean =>
   rel === root || rel.startsWith(`${root}/`);
 
 export function buildVaultExclusions(cfg: VaultExcludeConfig): VaultExclusions {
-  const configDir = cfg.configDir.replace(/^\/+|\/+$/g, "") || ".obsidian";
+  const configDir = cfg.configDir.replace(/^\/+|\/+$/g, "");
   const roots = cfg.workspaceRoots
     .map((r) => (r || "").trim().replace(/^\/+|\/+$/g, ""))
     .filter((r) => r.length > 0 && r !== "."); // ""/"/" roots are handled by the enable-guard

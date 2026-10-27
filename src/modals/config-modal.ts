@@ -4,7 +4,7 @@ import { showPopover, buildDropdown } from "../ui/components";
 import { renderIconRow, renderColorRow, openColorPicker, openIconPicker } from "../ui/pickers";
 import type InventTasksPlugin from "../main";
 import {
-  SpaceConfig, ListConfig, FolderConfig, WorkspaceConfig,
+  
   StatusDef, StatusGroup, CustomFieldDef, CustomFieldType, CustomFieldOption,
   TagDef, ContextLabelDef, TaskType, PriorityDef, ViewType, PerViewDefaults,
   ChipKind, ChipStyles, ChipStyleConfig, ResolvedChipStyles,
@@ -1206,9 +1206,6 @@ export class ConfigModal extends Modal {
       }
       return this.fieldLabelAt(key);
     };
-    // Colored type icon for a custom-field key (used in the field chips/lists).
-    const cfTypeOf = (key: string): string | undefined =>
-      key.startsWith("custom_field:") ? customFields.find((c) => c.id === key.slice(13))?.type : undefined;
     const labeledChip = (parentEl: HTMLElement, key: string, cls: string): HTMLButtonElement => {
       const el = parentEl.createEl("button", { cls });
       renderFieldIcon(el, key, customFields); // icon for built-in + custom fields

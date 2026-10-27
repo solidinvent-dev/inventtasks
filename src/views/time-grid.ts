@@ -378,7 +378,7 @@ export function renderTimeScaffold(
       railViewport!.scrollTop = axisScroll.scrollTop;
     };
     axisScroll.addEventListener("scroll", syncRail);
-    requestAnimationFrame(syncRail);
+    window.requestAnimationFrame(syncRail);
     root.querySelector(".it-tg-rail")?.addEventListener("wheel", (e) => {
       axisScroll.scrollTop += (e as WheelEvent).deltaY;
       e.preventDefault();

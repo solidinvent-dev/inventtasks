@@ -48,7 +48,7 @@ export class VaultSyncFs implements SyncFs {
     this.app = app;
     const r = (root || "").trim();
     this.root = !r || r === "/" ? "/" : normalizePath(r);
-    this.configDir = (app.vault as any).configDir || ".obsidian";
+    this.configDir = app.vault.configDir;
     this.exclusions = exclusions;
   }
 
@@ -214,6 +214,7 @@ export class VaultSyncFs implements SyncFs {
       const folderAbs = this.markerFolderAbs(rel);
       const af = folderAbs ? this.app.vault.getAbstractFileByPath(folderAbs) : null;
       if (af instanceof TFolder && af.children.length === 0) {
+        // sync deletions always go to the vault's .trash (restorable, never synced), whatever the user's delete preference
         await this.app.vault.trash(af, false);
         await this.pruneEmptyAncestors(folderAbs!);
       }
@@ -222,7 +223,9 @@ export class VaultSyncFs implements SyncFs {
     const abs = this.abs(rel);
     const existing = this.app.vault.getAbstractFileByPath(abs);
     if (existing instanceof TFile) {
-      // Vault trash (.trash/) — restorable, and .trash never syncs.
+      // Vault trash (.trash/) — restorable, and .trash never syncs. Deliberately
+      // not FileManager.trashFile: a deletion arriving from another device must
+      // stay recoverable even if this user deletes permanently.
       await this.app.vault.trash(existing, false);
     } else if (await this.app.vault.adapter.exists(abs)) {
       await this.app.vault.adapter.remove(abs);
@@ -245,6 +248,7 @@ export class VaultSyncFs implements SyncFs {
       if (this.isHiddenPath(dir) || this.isExcludedDir(dir)) return;
       const af = this.app.vault.getAbstractFileByPath(dir);
       if (!(af instanceof TFolder) || af.children.length > 0) return;
+      // empty folders left by a sync deletion, same rule as above
       await this.app.vault.trash(af, false);
       dir = dir.includes("/") ? dir.slice(0, dir.lastIndexOf("/")) : "";
     }

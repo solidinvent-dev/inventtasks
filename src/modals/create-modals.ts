@@ -458,7 +458,7 @@ export class QuickTaskModal extends Modal {
     });
     input.placeholder = t("create.taskTitle");
     input.addEventListener("input", () => input.setCustomValidity(""));
-    setTimeout(() => input.focus(), 30);
+    window.setTimeout(() => input.focus(), 30);
 
     const submit = async () => {
       const checkedTitle = validateTaskTitle(input.value);

@@ -184,7 +184,7 @@ export async function deleteAttachmentFile(
   const path = resolveAttachmentVaultPath(idx, taskId, att);
   const f = idx.app.vault.getAbstractFileByPath(path);
   if (f instanceof TFile) {
-    await idx.app.vault.trash(f, true);
+    await idx.app.fileManager.trashFile(f);
   }
 }
 
@@ -194,7 +194,7 @@ export async function deleteAllAttachmentsForTask(idx: WorkspaceIndex, taskId: s
   const dir = taskAttachmentsDir(idx, taskId);
   const f = idx.app.vault.getAbstractFileByPath(dir);
   if (f instanceof TFolder) {
-    await idx.app.vault.trash(f, true);
+    await idx.app.fileManager.trashFile(f);
   }
 }
 

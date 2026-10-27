@@ -170,7 +170,7 @@ export class IncrementalBackupService {
   }
 
   defaultPluginBackupRoot(): string {
-    const configDir = (this.plugin.app.vault as any).configDir || ".obsidian";
+    const configDir = this.plugin.app.vault.configDir;
     return normalizePath(`${configDir}/plugins/${this.plugin.manifest.id}/backups`);
   }
 
@@ -252,7 +252,7 @@ export class IncrementalBackupService {
     if (opts.mode === "overwrite") {
       for (const path of deletedPaths) {
         const existing = this.plugin.app.vault.getAbstractFileByPath(path);
-        if (existing) await this.plugin.app.vault.delete(existing, true);
+        if (existing) await this.plugin.app.fileManager.trashFile(existing);
       }
     }
     const unrestorable: { path: string; reason: string }[] = [];
@@ -272,8 +272,8 @@ export class IncrementalBackupService {
       await this.ensureVaultFolder(destPath.split("/").slice(0, -1).join("/"));
       const existing = this.plugin.app.vault.getAbstractFileByPath(destPath);
       if (entry.rawEncoding === "base64") {
-        if (existing) await this.plugin.app.vault.delete(existing, true);
-        await this.writeVaultBinary(destPath, contents);
+        // Overwrite in place: replacing a file is not deleting it.
+        await this.writeVaultBinary(destPath, contents, existing);
       } else if (existing instanceof TFile) await this.plugin.app.vault.modify(existing, contents);
       else await this.plugin.app.vault.create(destPath, contents);
       restored++;
@@ -473,10 +473,12 @@ export class IncrementalBackupService {
     const walk = async (dir: string) => {
       const listed = await this.safeVaultList(dir);
       for (const file of listed.files) {
-        if (!this.isBackupPath(file)) out.push(file);
+        if (!this.isBackupPath(file) && this.pathInWorkspace(ws, file)) out.push(file);
       }
       for (const folder of listed.folders) {
-        if (!this.isBackupPath(folder)) await walk(folder);
+        // Same rule as the journal: the config folder (whatever it is called)
+        // is never part of a workspace, so snapshots skip it too.
+        if (!this.isBackupPath(folder) && normalizePath(folder) !== this.plugin.app.vault.configDir) await walk(folder);
       }
     };
     await walk(root);
@@ -633,7 +635,6 @@ export class IncrementalBackupService {
   }
 
   private async targetFor(ws: WorkspaceEntry): Promise<BackupTarget> {
-    const settings = makeIncrementalBackupSettings(ws.backup);
     return adapterTarget(this.plugin.app, this.rootFor(ws));
   }
 
@@ -650,12 +651,14 @@ export class IncrementalBackupService {
   private pathInWorkspace(ws: WorkspaceEntry, path: string): boolean {
     const root = normalizeWorkspaceRoot(ws.workspaceRoot);
     const p = normalizePath(path);
-    return root === "/" ? !p.startsWith(".obsidian/") : p === root || p.startsWith(`${root}/`);
+    // The vault's config folder is not part of a whole-vault workspace — and its
+    // name is the user's choice, not necessarily ".obsidian".
+    return root === "/" ? !p.startsWith(`${this.plugin.app.vault.configDir}/`) : p === root || p.startsWith(`${root}/`);
   }
 
   private isBackupPath(path: string): boolean {
     const p = normalizePath(path);
-    return p.includes("/.inventtasks-backups/") || p.includes("/inventtasks/backups/") || p.startsWith(".obsidian/plugins/inventtasks/backups/");
+    return p.includes("/.inventtasks-backups/") || p.includes("/inventtasks/backups/") || p.startsWith(`${this.defaultPluginBackupRoot()}/`);
   }
 
   private relativeToWorkspace(root: string, path: string): string {
@@ -697,10 +700,11 @@ export class IncrementalBackupService {
     return { base64: buffer.toString("base64"), sha256: await sha256Hex(new Uint8Array(data)), byteLength: buffer.byteLength };
   }
 
-  private async writeVaultBinary(path: string, base64: string): Promise<void> {
+  private async writeVaultBinary(path: string, base64: string, existing?: TAbstractFile | null): Promise<void> {
     const buffer = Buffer.from(base64, "base64");
     const data = buffer.buffer.slice(buffer.byteOffset, buffer.byteOffset + buffer.byteLength);
-    if ((this.plugin.app.vault as any).createBinary) await (this.plugin.app.vault as any).createBinary(path, data);
+    if (existing instanceof TFile) await this.plugin.app.vault.modifyBinary(existing, data);
+    else if ((this.plugin.app.vault as any).createBinary) await (this.plugin.app.vault as any).createBinary(path, data);
     else await (this.plugin.app.vault.adapter as any).writeBinary(path, data);
   }
 

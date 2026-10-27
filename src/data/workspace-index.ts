@@ -4,7 +4,7 @@ import {
   SpaceNode, FolderNode, ListNode, TaskFile, ViewConfig,
   StatusDef, ResolvedStatusSet, CustomFieldDef, PriorityDef,
   ViewDefaults, ViewType, ContextLocation, TaskType, SidebarOrder,
-  ChipKind, ChipStyles, ResolvedChipStyles, parentTaskIds, normalizeParentTask,
+   ChipStyles, ResolvedChipStyles, parentTaskIds, normalizeParentTask,
   DocMeta, DocPage, FavLocation,
 } from "../types";
 import {
@@ -291,7 +291,7 @@ export class WorkspaceIndex {
             this.trashIdCache.set(child.path, entry);
           }
           if (entry.id) this.trashedTaskIds.add(entry.id);
-        } catch (e) {
+        } catch {
           // A damaged trash entry must not prevent the active workspace from
           // loading. It will remain visible to the Trash diagnostics/actions.
         }
@@ -1351,7 +1351,7 @@ export class WorkspaceIndex {
     if (existing instanceof TFolder) return existing;
     try {
       await this.app.vault.createFolder(norm);
-    } catch (e) {
+    } catch {
       // Tolerate "already exists" races (the metadata cache can lag behind the
       // adapter, so getAbstractFileByPath returned null even though the folder
       // exists on disk). Re-check below before failing.
@@ -1363,7 +1363,7 @@ export class WorkspaceIndex {
       if (!(await this.app.vault.adapter.exists(norm))) {
         await this.app.vault.adapter.mkdir(norm);
       }
-    } catch (e) { /* ignore */ }
+    } catch { /* ignore */ }
     const after = this.app.vault.getAbstractFileByPath(norm);
     if (after instanceof TFolder) return after;
     throw new Error(t("err.couldNotCreateFolder", { path: norm }));
@@ -1599,7 +1599,7 @@ export class WorkspaceIndex {
       await this.withSuppression(async () => {
         for (const copy of created) {
           const file = this.app.vault.getAbstractFileByPath(copy.filePath);
-          if (file instanceof TFile) await this.app.vault.trash(file, true);
+          if (file instanceof TFile) await this.app.fileManager.trashFile(file);
           try { await deleteAllAttachmentsForTask(this, copy.data.id); } catch { /* best-effort rollback */ }
           this.tasksById.delete(copy.data.id);
           const pos = targetList.taskFiles.indexOf(copy);
@@ -1873,7 +1873,6 @@ export class WorkspaceIndex {
     if (selected.some((task) => !task || task.data.archived || this.isSystemTask(task))) {
       throw new Error(t("merge.invalidSelection"));
     }
-    const target = this.tasksById.get(targetId)!;
     const sources = selected.filter((task): task is TaskFile => !!task && task.data.id !== targetId);
     const selectedIds = new Set(uniqueIds);
 
@@ -2207,8 +2206,8 @@ export class WorkspaceIndex {
     const id = typeof fm.id === "string" ? fm.id : "";
     if (id) await this.stripCustomRelationshipRefs(id);
     await this.withSuppression(async () => {
-      if (id) { try { await deleteAllAttachmentsForTask(this, id); } catch (e) { /* swallow */ } }
-      await this.app.vault.trash(file, true);
+      if (id) { try { await deleteAllAttachmentsForTask(this, id); } catch { /* swallow */ } }
+      await this.app.fileManager.trashFile(file);
     });
     await this.scanTrashedTaskIds();
     this.emit();
@@ -2295,8 +2294,8 @@ export class WorkspaceIndex {
     if (!(folder instanceof TFolder)) return;
     const ids = await this.collectTrashedTaskIds(folder);
     await this.withSuppression(async () => {
-      for (const id of ids) { try { await deleteAllAttachmentsForTask(this, id); } catch (e) { /* swallow */ } }
-      await this.app.vault.trash(folder, true);
+      for (const id of ids) { try { await deleteAllAttachmentsForTask(this, id); } catch { /* swallow */ } }
+      await this.app.fileManager.trashFile(folder);
     });
     await this.scanTrashedTaskIds();
     this.emit();
@@ -3109,7 +3108,7 @@ export class WorkspaceIndex {
     const v = this.views.find((x) => x.view_id === viewId);
     if (!v?.__path) return;
     const f = this.app.vault.getAbstractFileByPath(v.__path);
-    if (f instanceof TFile) await this.app.vault.trash(f, true);
+    if (f instanceof TFile) await this.app.fileManager.trashFile(f);
     await this.scan();
     this.emit();
   }
@@ -3281,13 +3280,13 @@ export class WorkspaceIndex {
     for (const p of this.pagesForDoc(docId)) {
       if (p.__path) {
         const f = this.app.vault.getAbstractFileByPath(p.__path);
-        if (f instanceof TFile) await this.app.vault.trash(f, true);
+        if (f instanceof TFile) await this.app.fileManager.trashFile(f);
       }
     }
     const d = this.docById(docId);
     if (d?.__path) {
       const f = this.app.vault.getAbstractFileByPath(d.__path);
-      if (f instanceof TFile) await this.app.vault.trash(f, true);
+      if (f instanceof TFile) await this.app.fileManager.trashFile(f);
     }
     await this.scan();
     this.emit();
@@ -3367,7 +3366,7 @@ export class WorkspaceIndex {
     for (const ch of children) await this.writePageRaw(ch, { parent_page: p.parent_page ?? null });
     if (p.__path) {
       const f = this.app.vault.getAbstractFileByPath(p.__path);
-      if (f instanceof TFile) await this.app.vault.trash(f, true);
+      if (f instanceof TFile) await this.app.fileManager.trashFile(f);
     }
     await this.scan();
     this.emit();

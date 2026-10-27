@@ -129,7 +129,7 @@ export function openColorPicker(
         inp.remove();
         closePopover();
       });
-      inp.addEventListener("blur", () => setTimeout(() => inp.remove(), 300));
+      inp.addEventListener("blur", () => window.setTimeout(() => inp.remove(), 300));
       inp.click();
     });
 
@@ -147,7 +147,7 @@ export function openColorPicker(
       try {
         await navigator.clipboard.writeText(v);
         copyBtn.addClass("it-just-copied");
-        setTimeout(() => copyBtn.removeClass("it-just-copied"), 800);
+        window.setTimeout(() => copyBtn.removeClass("it-just-copied"), 800);
       } catch { /* clipboard unavailable */ }
     });
   });
@@ -302,7 +302,7 @@ export function openIconPicker(
       void renderGrid();
       // Focus the input on every re-render so the user can keep typing.
       // Defer so it runs after the popover has been positioned.
-      setTimeout(() => {
+      window.setTimeout(() => {
         try { input.focus(); input.setSelectionRange(input.value.length, input.value.length); } catch { /* noop */ }
       }, 0);
     };

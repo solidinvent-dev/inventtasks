@@ -2,7 +2,7 @@ import { setIcon, Notice, Platform } from "obsidian";
 import { showContextMenu } from "../ui/menu";
 import type InventTasksPlugin from "../main";
 import { favoriteToggleItems } from "./favorites";
-import { TaskFile, StatusDef, PriorityDef, CustomFieldDef, ContextLocation, parentTaskIds } from "../types";
+import { TaskFile, StatusDef, PriorityDef, CustomFieldDef, parentTaskIds } from "../types";
 import { ViewState } from "./main-view";
 import { appendActivity } from "../data/activity";
 import { renderCustomFieldValue } from "../ui/cf-render";
@@ -143,7 +143,7 @@ function restoreTableScroll(opts: RenderOpts) {
   const left = Number((opts.state as any).__tableScrollLeft);
   const top = Number((opts.state as any).__tableScrollTop);
   if (!Number.isFinite(left) && !Number.isFinite(top)) return;
-  requestAnimationFrame(() => {
+  window.requestAnimationFrame(() => {
     const wrap = opts.parent.querySelector(".it-table-wrap") as HTMLElement | null;
     if (!wrap) return;
     if (Number.isFinite(left)) wrap.scrollLeft = left;
@@ -775,7 +775,7 @@ export function renderTableView(opts: RenderOpts) {
   const rememberedTop = Number((state as any).__tableScrollTop);
   if (Number.isFinite(rememberedLeft)) tableWrap.scrollLeft = rememberedLeft;
   if (Number.isFinite(rememberedTop)) tableWrap.scrollTop = rememberedTop;
-  requestAnimationFrame(() => {
+  window.requestAnimationFrame(() => {
     if (Number.isFinite(rememberedLeft)) tableWrap.scrollLeft = rememberedLeft;
     if (Number.isFinite(rememberedTop)) tableWrap.scrollTop = rememberedTop;
   });
@@ -1330,7 +1330,7 @@ function renderBulkBar(bar: HTMLElement, selected: Set<string>, opts: RenderOpts
         }),
         onSelect: async (v) => {
           closePop();
-          for (const id of ids()) { try { await plugin.index.moveTask(id, v); } catch (err) { /* skip individual failures */ } }
+          for (const id of ids()) { try { await plugin.index.moveTask(id, v); } catch { /* skip individual failures */ } }
           selected.clear();
           opts.rerender ? opts.rerender() : renderBulkBar(bar, selected, opts);
         },
@@ -1438,7 +1438,7 @@ function renderBulkBar(bar: HTMLElement, selected: Set<string>, opts: RenderOpts
       destructive: true,
       confirmLabel: i18n("common.delete"),
       onConfirm: async () => {
-        for (const id of ids()) { try { await plugin.index.deleteTask(id); } catch (e) { /* skip */ } }
+        for (const id of ids()) { try { await plugin.index.deleteTask(id); } catch { /* skip */ } }
         selected.clear();
       },
     }).open();
@@ -1491,14 +1491,6 @@ export function csvCellValue(t: TaskFile, col: string, plugin: InventTasksPlugin
     return customFieldText(cf, raw, { taskTitles: ctx.taskTitles });
   }
   return "";
-}
-
-function filenameForLocation(plugin: InventTasksPlugin, loc: ContextLocation): string {
-  let base = loc.kind as string;
-  if (loc.kind === "list") base = plugin.index.findList(loc.path)?.config.name || "list";
-  else if (loc.kind === "folder") base = plugin.index.findFolder(loc.path)?.config.name || "folder";
-  else if (loc.kind === "space") base = plugin.index.findSpace(loc.path)?.config.name || "space";
-  return (base || "tasks").replace(/[^a-zA-Z0-9_-]+/g, "-").replace(/^-+|-+$/g, "") || "tasks";
 }
 
 // ---------- Rows / cells ----------

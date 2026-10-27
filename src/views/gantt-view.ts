@@ -15,7 +15,7 @@ import { DATE_SOURCE_DUE, DATE_SOURCE_START } from "../constants";
 import {
   TimeViewContext, buildAxis, barGeom, BarGeom, resolveBarColor, taskProgress,
   renderTimeToolbar, renderTimeScaffold, scrollToKey, attachBarDrag, axisTitle,
-  ROW_H, AXIS_H, TIME_EDIT_ENABLED, TimeNavHandlers, ctxDateFields,
+  ROW_H, TIME_EDIT_ENABLED, TimeNavHandlers, ctxDateFields,
 } from "./time-grid";
 
 const RENDER_CHUNK_ROWS = 80;
@@ -122,7 +122,7 @@ export function renderGanttView(opts: GanttRenderOpts) {
     if (!scaffold.root.isConnected) return;
     const end = Math.min(rows.length, cursor + RENDER_CHUNK_ROWS);
     for (; cursor < end; cursor++) renderRow(rows[cursor], cursor);
-    if (cursor < rows.length) requestAnimationFrame(renderChunk);
+    if (cursor < rows.length) window.requestAnimationFrame(renderChunk);
     else renderDependenciesAfterRows();
   };
   renderChunk();
@@ -139,7 +139,7 @@ export function renderGanttView(opts: GanttRenderOpts) {
   scaffold.axisScroll.addEventListener("scroll", () => {
     (state as any).__tgScrollTop = scaffold.axisScroll.scrollTop;
   });
-  requestAnimationFrame(() => {
+  window.requestAnimationFrame(() => {
     const sl = (state as any).__tgScrollLeft, st = (state as any).__tgScrollTop;
     if (typeof sl === "number") scaffold.hScroll.scrollLeft = sl;
     else scrollToKey(scaffold, axis, anchor, "center");

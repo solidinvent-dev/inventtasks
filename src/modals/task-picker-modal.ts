@@ -1,4 +1,4 @@
-import { App, Modal, Notice } from "obsidian";
+import { App, Modal } from "obsidian";
 import type InventTasksPlugin from "../main";
 import type { TaskFile } from "../types";
 import { renderIconish } from "../ui/icons";
@@ -139,7 +139,7 @@ export class TaskPickerModal extends Modal {
       }
     });
     // Focus the search field as soon as the modal lands.
-    setTimeout(() => searchInput.focus(), 0);
+    window.setTimeout(() => searchInput.focus(), 0);
 
     const footer = c.createDiv({ cls: "it-move-modal-footer" });
     this.renderCreateNew(footer);

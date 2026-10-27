@@ -135,7 +135,7 @@ export function renderTimelineView(opts: TimelineRenderOpts) {
     if (!scaffold.root.isConnected) return;
     const end = Math.min(lanes.length, cursor + RENDER_CHUNK_LANES);
     for (; cursor < end; cursor++) renderLane(lanes[cursor]);
-    if (cursor < lanes.length) requestAnimationFrame(renderChunk);
+    if (cursor < lanes.length) window.requestAnimationFrame(renderChunk);
   };
   renderChunk();
 
@@ -154,7 +154,7 @@ export function renderTimelineView(opts: TimelineRenderOpts) {
   scaffold.axisScroll.addEventListener("scroll", () => {
     (state as any).__tgScrollTop = scaffold.axisScroll.scrollTop;
   });
-  requestAnimationFrame(() => {
+  window.requestAnimationFrame(() => {
     const sl = (state as any).__tgScrollLeft, st = (state as any).__tgScrollTop;
     if (typeof sl === "number") scaffold.hScroll.scrollLeft = sl;
     else scrollToKey(scaffold, axis, anchor, "center");

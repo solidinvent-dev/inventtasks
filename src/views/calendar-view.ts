@@ -1,6 +1,6 @@
 import { setIcon, Platform, Modal } from "obsidian";
 import type InventTasksPlugin from "../main";
-import { TaskFile, StatusDef, PriorityDef, ResolvedChipStyles, CustomFieldDef, TaskType, ContextLabelDef, TagDef } from "../types";
+import { TaskFile, StatusDef, PriorityDef, ResolvedChipStyles, CustomFieldDef, ContextLabelDef, TagDef } from "../types";
 import { projectOccurrences } from "../data/recurring";
 import { renderCustomFieldValue } from "../ui/cf-render";
 import { effectiveCustomFieldValue, isEmptyCustomFieldValue } from "../data/custom-fields";
@@ -176,7 +176,7 @@ export function renderCalendarView(opts: RenderOpts) {
     const savedTop = (state as any).__calScrollTop;
     const savedLeft = (state as any).__calScrollLeft;
     if (state.calendarPeriod !== "monthCompact" && (typeof savedTop === "number" || typeof savedLeft === "number")) {
-      requestAnimationFrame(() => {
+      window.requestAnimationFrame(() => {
         if (typeof savedTop === "number") scroll.scrollTop = savedTop;
         if (typeof savedLeft === "number") scroll.scrollLeft = savedLeft;
       });
@@ -402,7 +402,7 @@ function renderMonthCompact(opts: RenderOpts) {
   // Initial fill once laid out, then keep it in sync as the grid resizes (desktop
   // window resize, panel splits, rotation). The observer self-disconnects when the
   // grid leaves the DOM (next render replaces it).
-  requestAnimationFrame(fill);
+  window.requestAnimationFrame(fill);
   const ro = new ResizeObserver(() => {
     if (!grid.isConnected) { ro.disconnect(); return; }
     fill();
@@ -709,7 +709,7 @@ function renderPill(parent: HTMLElement, entry: PillEntry, opts: RenderOpts) {
       const offX = Math.max(0, Math.min(Math.round(e.offsetX), w - 1));
       e.dataTransfer.setDragImage(ghost, offX, Math.round(e.offsetY));
       // The browser snapshots synchronously; drop the clone right after.
-      setTimeout(() => ghost.remove(), 0);
+      window.setTimeout(() => ghost.remove(), 0);
     });
   }
 }

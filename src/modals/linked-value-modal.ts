@@ -98,7 +98,7 @@ export class LinkedValueModal extends Modal {
       });
     });
 
-    setTimeout(() => (this.value ? valueInput.focus() : labelInput.focus()), 0);
+    window.setTimeout(() => (this.value ? valueInput.focus() : labelInput.focus()), 0);
   }
 
   onClose() {
@@ -237,7 +237,7 @@ export class LocationModal extends Modal {
       });
     });
 
-    setTimeout(() => labelInput.focus(), 0);
+    window.setTimeout(() => labelInput.focus(), 0);
   }
 
   onClose() {

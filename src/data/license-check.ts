@@ -158,14 +158,26 @@ export async function emailHash(email: string): Promise<string> {
 // is how a statement written on one device reaches the others via sync).
 const seenSeeds = new Set<string>();
 
+/** This device's copy, scoped to the vault by Obsidian (App.loadLocalStorage). */
+function loadLocal(plugin: InventTasksPlugin, key: string): string | null {
+  try {
+    const value: unknown = plugin.app.loadLocalStorage(key);
+    return typeof value === "string" ? value : null;
+  } catch {
+    return null; // storage unavailable
+  }
+}
+
+function saveLocal(plugin: InventTasksPlugin, key: string, value: string): void {
+  try { plugin.app.saveLocalStorage(key, value); } catch { /* storage unavailable */ }
+}
+
 function storedRaws(plugin: InventTasksPlugin): string[] {
   const out: string[] = [];
   const fromSettings = (plugin.settings as { seed?: string }).seed;
   if (fromSettings) out.push(fromSettings);
-  try {
-    const ls = window.localStorage.getItem(LS_SEED);
-    if (ls) out.push(ls);
-  } catch { /* storage unavailable */ }
+  const ls = loadLocal(plugin, LS_SEED);
+  if (ls) out.push(ls);
   out.push(...seenSeeds);
   return out;
 }
@@ -186,7 +198,7 @@ async function storeStamp(plugin: InventTasksPlugin, stamp: Stamp): Promise<void
   const raw = encodeStamp(stamp);
   seenSeeds.add(raw);
   (plugin.settings as { seed?: string }).seed = raw;
-  try { window.localStorage.setItem(LS_SEED, raw); } catch { /* storage unavailable */ }
+  saveLocal(plugin, LS_SEED, raw);
   setStateSeed(raw);
   try {
     await plugin.saveSettings();
@@ -249,7 +261,7 @@ export async function fetchStanding(plugin: InventTasksPlugin, email: string): P
   }
   const stamp = parseStamp(body);
   if (!stamp || !isFreshStatusResponse(stamp, eh, auth.n)) return "offline";
-  try { window.localStorage.setItem(LS_CHECKED, String(Date.now())); } catch { /* ignore */ }
+  saveLocal(plugin, LS_CHECKED, String(Date.now()));
   const current = newestStamp(plugin, eh);
   if (!current || compareStampOrder(stamp, current) > 0) await storeStamp(plugin, stamp);
   return newestStamp(plugin, eh)?.st ?? "ok";
@@ -310,12 +322,9 @@ export async function activateAccount(
   return "ok";
 }
 
-function lastCheckedAt(): number {
-  try {
-    return parseInt(window.localStorage.getItem(LS_CHECKED) || "0", 10) || 0;
-  } catch {
-    return 0; // unreadable storage reads as "never checked", so a check is due
-  }
+function lastCheckedAt(plugin: InventTasksPlugin): number {
+  // Unreadable storage reads as "never checked", so a check is due.
+  return parseInt(loadLocal(plugin, LS_CHECKED) || "0", 10) || 0;
 }
 
 let confirmTimer: number | null = null;
@@ -344,13 +353,13 @@ function scheduleConfirmation(plugin: InventTasksPlugin, delay: number = FIRST_R
   confirmTimer = window.setTimeout(() => {
     confirmTimer = null;
     if (!plugin.settings.account?.id) return; // account removed meanwhile
-    const before = lastCheckedAt();
+    const before = lastCheckedAt(plugin);
     // A check that throws is a check that did not confirm — swallow it and
     // re-arm, or one bad round trip would end the chain for good.
     void checkLicenseNow(plugin)
       .catch(() => undefined)
       .then(() => {
-        if (lastCheckedAt() > before) return; // confirmed
+        if (lastCheckedAt(plugin) > before) return; // confirmed
         scheduleConfirmation(plugin, RETRY_EVERY_MS);
       });
   }, delay);
@@ -365,7 +374,7 @@ export function startLicenseCheck(plugin: InventTasksPlugin): () => void {
     void applyLocalLicenseState(plugin);
   });
 
-  const due = (): boolean => Date.now() - lastCheckedAt() >= CHECK_EVERY_MS;
+  const due = (): boolean => Date.now() - lastCheckedAt(plugin) >= CHECK_EVERY_MS;
   // No navigator.onLine gate. That flag lies in both directions — a captive
   // portal reports online, a sleep/VPN transition reports offline while the
   // network works — and skipping the tick on it is exactly how a device

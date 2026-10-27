@@ -1,6 +1,6 @@
-import { App, Modal, MarkdownRenderer, Notice, Component, setIcon, TFile } from "obsidian";
+import { App, Modal, MarkdownRenderer, Notice, Component, setIcon } from "obsidian";
 import type InventTasksPlugin from "../main";
-import { TaskFile, StatusDef, PriorityId, ChecklistItem, CommentEntry, LinkedValue, TaskAttachment, RecurringConfig, DocMeta, parentTaskIds, normalizeParentTask } from "../types";
+import { TaskFile, StatusDef, ChecklistItem, CommentEntry, LinkedValue, TaskAttachment, RecurringConfig, DocMeta, parentTaskIds, normalizeParentTask } from "../types";
 import { DOC_ICON, DOC_ACCENT } from "../constants";
 import { addCfAttachments, removeCfAttachment, renameCfAttachment, addMainAttachments, removeMainAttachment, renameMainAttachment, openAttachmentInDefaultApp, humanFileSize, resolveAttachmentVaultPath, resolveCoverUrl, applyCoverBackground, coverColorValue } from "../data/attachments";
 import { pickCheckboxCheckedStatus, pickCheckboxUncheckedStatus, type CheckboxAction } from "../data/status-helpers";
@@ -12,8 +12,8 @@ import {
 } from "../data/relationships";
 import { appendActivity } from "../data/activity";
 import { addComment, editComment, removeComment, moveComment } from "../data/comments";
-import { statusChip, priorityChip, dueDateChip, tagChip, buildDropdown, showPopover, applyChipStyleByKind } from "../ui/components";
-import { dayKey, formatDate, formatDuration, nowIso, todayIso } from "../utils/dates";
+import { statusChip, priorityChip, tagChip, buildDropdown, showPopover, applyChipStyleByKind } from "../ui/components";
+import { dayKey, formatDate } from "../utils/dates";
 import { renderDateTimeInput } from "../ui/datetime-field";
 import { ConfirmModal } from "./confirm-modal";
 import { ConfigModal } from "./config-modal";
@@ -235,7 +235,7 @@ export class TaskModal extends Modal {
       // Defensive second set after the next paint, in case scrollHeight
       // wasn't fully computed when the sync set ran (also covers the
       // ~350ms-later vault-event re-render that fires after this returns).
-      requestAnimationFrame(() => { sc2.scrollTop = beforeScroll; });
+      window.requestAnimationFrame(() => { sc2.scrollTop = beforeScroll; });
     }
   }
 
@@ -777,7 +777,6 @@ export class TaskModal extends Modal {
     }
 
     // ----- Tags row -----
-    const list = this.plugin.index.findList(this.task.listPath || "");
     if (features.tags !== false) {
       const tagsSection = H("tags").createDiv({ cls: "it-section" });
       const tagsHeader = tagsSection.createDiv({ cls: "it-section-title-row" });
@@ -872,7 +871,7 @@ export class TaskModal extends Modal {
               }
             });
             refresh("");
-            requestAnimationFrame(() => searchInput.focus());
+            window.requestAnimationFrame(() => searchInput.focus());
           });
         });
       };
@@ -980,7 +979,7 @@ export class TaskModal extends Modal {
               }
             });
             refresh("");
-            requestAnimationFrame(() => searchInput.focus());
+            window.requestAnimationFrame(() => searchInput.focus());
           });
         });
       };
@@ -1402,7 +1401,7 @@ export class TaskModal extends Modal {
       // the rebuild (e.g., contentEl was the scroller, now an ancestor is).
       const sc = this.getScrollContainer();
       sc.scrollTop = prevScroll;
-      requestAnimationFrame(() => { sc.scrollTop = prevScroll; });
+      window.requestAnimationFrame(() => { sc.scrollTop = prevScroll; });
     }
   }
 
@@ -1437,7 +1436,6 @@ export class TaskModal extends Modal {
   }
 
   private renderDescriptionSection(parent: HTMLElement) {
-    const t = this.task;
     const sec = parent.createDiv({ cls: "it-section" });
     const head = sec.createDiv({ cls: "it-section-title-row" });
     head.createDiv({ cls: "it-section-title", text: tr("task.description.title") });
@@ -1548,7 +1546,7 @@ export class TaskModal extends Modal {
           const ta = row.createEl("textarea", { cls: "it-input it-comment-input" });
           ta.value = cm.text;
           ta.rows = Math.max(3, Math.min(12, cm.text.split("\n").length + 1));
-          setTimeout(() => ta.focus(), 0);
+          window.setTimeout(() => ta.focus(), 0);
           const editActions = row.createDiv({ cls: "it-comment-actions" });
           const saveBtn = editActions.createEl("button", { cls: "it-btn-primary", text: tr("common.save") });
           const cancelBtn = editActions.createEl("button", { cls: "it-btn-ghost", text: tr("common.cancel") });
@@ -1685,7 +1683,7 @@ export class TaskModal extends Modal {
         else if (ev.key === "Escape") { ev.preventDefault(); cancel(); }
       });
       input.addEventListener("blur", () => { void save(); });
-      setTimeout(() => input.focus(), 0);
+      window.setTimeout(() => input.focus(), 0);
     });
   }
 

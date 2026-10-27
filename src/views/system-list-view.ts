@@ -429,7 +429,7 @@ export class SystemItemModal extends Modal {
           };
           input.addEventListener("input", refresh);
           refresh();
-          requestAnimationFrame(() => input.focus());
+          window.requestAnimationFrame(() => input.focus());
         });
       });
     };

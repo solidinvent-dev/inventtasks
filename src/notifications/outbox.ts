@@ -37,7 +37,7 @@ export interface OutboxSubmission {
 
 interface PendingGroup {
   submissions: OutboxSubmission[];
-  timer: ReturnType<typeof setTimeout> | null;
+  timer: number | null;
   deadline: number;
 }
 
@@ -66,9 +66,9 @@ export class NotifOutbox {
     }
     group.submissions.push(sub);
     // Trailing debounce capped by the group's deadline.
-    if (group.timer) clearTimeout(group.timer);
+    if (group.timer) window.clearTimeout(group.timer);
     const wait = Math.max(0, Math.min(this.quietMs, group.deadline - now));
-    group.timer = setTimeout(() => void this.flushGroup(key), wait);
+    group.timer = window.setTimeout(() => void this.flushGroup(key), wait);
   }
 
   /** Deliver everything pending immediately (manual sync, app resume, tests). */
@@ -80,7 +80,7 @@ export class NotifOutbox {
    *  were only marked sent in memory, so they re-fire on next start. */
   dispose(): void {
     for (const group of this.groups.values()) {
-      if (group.timer) clearTimeout(group.timer);
+      if (group.timer) window.clearTimeout(group.timer);
     }
     this.groups.clear();
   }
@@ -89,7 +89,7 @@ export class NotifOutbox {
     const group = this.groups.get(key);
     if (!group) return;
     this.groups.delete(key);
-    if (group.timer) clearTimeout(group.timer);
+    if (group.timer) window.clearTimeout(group.timer);
 
     const pool = group.submissions.flatMap((s) => s.items);
     if (pool.length) {

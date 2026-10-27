@@ -300,7 +300,7 @@ export class SyncManager {
   /** Whole-vault roots must never ship Obsidian config, trash or git innards. */
   private isVaultRootExcluded(rel: string): boolean {
     const top = rel.split("/")[0];
-    const configDir = (this.plugin.app.vault as any).configDir || ".obsidian";
+    const configDir = this.plugin.app.vault.configDir;
     return top === configDir || top === ".trash" || top === ".git";
   }
 
@@ -515,7 +515,7 @@ export class SyncManager {
   // -------------------------------------------------------------------------
 
   private stateDir(): string {
-    const configDir = (this.plugin.app.vault as any).configDir || ".obsidian";
+    const configDir = this.plugin.app.vault.configDir;
     return normalizePath(`${configDir}/plugins/${this.plugin.manifest.id}/sync`);
   }
 

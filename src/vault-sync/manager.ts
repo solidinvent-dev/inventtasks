@@ -208,7 +208,7 @@ export class VaultSyncManager {
     this.closed = false;
     this.cfgKey = cfgKey;
 
-    const configDir = (this.plugin.app.vault as any).configDir || ".obsidian";
+    const configDir = this.plugin.app.vault.configDir;
     this.detectedRoots = new Set();
     this.scanLocalMarkers();
     this.exclusions = buildVaultExclusions({
@@ -488,7 +488,7 @@ export class VaultSyncManager {
   // -------------------------------------------------------------------------
 
   private stateDir(): string {
-    const configDir = (this.plugin.app.vault as any).configDir || ".obsidian";
+    const configDir = this.plugin.app.vault.configDir;
     return normalizePath(`${configDir}/plugins/${this.plugin.manifest.id}/sync`);
   }
 

@@ -26,14 +26,13 @@ import {
 } from "./notifications/types";
 import { NtfyChannel } from "./notifications/channels/ntfy";
 import { normalizeDigestTime } from "./notifications/engine";
-import { CalendarSyncPrefs, defaultCalendarSyncPrefs } from "./calendar-sync/types";
+import { CalendarSyncPrefs } from "./calendar-sync/types";
 import { SyncSettings, makeSyncSettings } from "./sync/types";
-import { VaultSyncSettings, makeVaultSyncSettings, vaultSyncConfigured } from "./vault-sync/types";
+import { VaultSyncSettings, makeVaultSyncSettings } from "./vault-sync/types";
 import { overlappingWholeVaultRoot } from "./vault-sync/exclusions";
 import { SyncHistoryModal } from "./modals/sync-history-modal";
 import { SyncPathPickerModal } from "./modals/sync-path-picker-modal";
 import { testCalDav } from "./calendar-sync/caldav";
-import { runCalendarSync } from "./calendar-sync/sync";
 import { makeIncrementalBackupSettings, type IncrementalBackupSettings } from "./data/incremental-backup";
 
 export interface ActivitySettings {
@@ -714,7 +713,7 @@ export class InventTasksSettingTab extends PluginSettingTab {
           attr: { title: VIEW_NAMES[i], value: colors[i] },
         });
         picker.value = colors[i];
-        const label = col.createSpan({ cls: "it-scheme-label", text: VIEW_NAMES[i] });
+        col.createSpan({ cls: "it-scheme-label", text: VIEW_NAMES[i] });
         picker.addEventListener("input", async (e) => {
           const val = (e.target as HTMLInputElement).value;
           const current = resolveViewColors();
@@ -1370,7 +1369,7 @@ export class InventTasksSettingTab extends PluginSettingTab {
 
     new Setting(containerEl)
       .setName(t("sync.interval"))
-      .setDesc(t("vaultSync.intervalDesc"))
+      .setDesc(t("vaultSync.intervalDesc", { dir: this.app.vault.configDir }))
       .addText((txt) => txt.setValue(String(vs.intervalMinutes)).onChange(async (value) => {
         vs.intervalMinutes = Math.max(1, Math.min(120, parseInt(value, 10) || 5));
         await save();
@@ -1393,16 +1392,16 @@ export class InventTasksSettingTab extends PluginSettingTab {
       }));
 
     new Setting(containerEl)
-      .setName(t("vaultSync.obsidianConfig"))
-      .setDesc(t("vaultSync.obsidianConfigDesc"))
+      .setName(t("vaultSync.obsidianConfig", { dir: this.app.vault.configDir }))
+      .setDesc(t("vaultSync.obsidianConfigDesc", { dir: this.app.vault.configDir }))
       .addToggle((tog) => tog.setValue(vs.syncObsidianConfig).onChange(async (value) => {
         vs.syncObsidianConfig = value;
         await save();
       }));
 
     new Setting(containerEl)
-      .setName(t("vaultSync.obsidianPlugins"))
-      .setDesc(t("vaultSync.obsidianPluginsDesc"))
+      .setName(t("vaultSync.obsidianPlugins", { dir: this.app.vault.configDir }))
+      .setDesc(t("vaultSync.obsidianPluginsDesc", { dir: this.app.vault.configDir }))
       .addToggle((tog) => tog.setValue(vs.syncObsidianPlugins).onChange(async (value) => {
         vs.syncObsidianPlugins = value;
         await save();
@@ -1476,7 +1475,7 @@ export class InventTasksSettingTab extends PluginSettingTab {
     const status = this.plugin.incrementalBackupService?.backupStatus(this.plugin.prefs);
     containerEl.createEl("p", {
       cls: "setting-item-description",
-      text: t("backup.desc", { path: status?.root || ".obsidian/plugins/inventtasks/backups" }),
+      text: t("backup.desc", { path: status?.root || `${this.app.vault.configDir}/plugins/${this.plugin.manifest.id}/backups` }),
     });
     if (status?.lastError) {
       containerEl.createEl("p", { cls: "it-export-error", text: t("backup.lastError", { msg: status.lastError }) });
@@ -1500,7 +1499,7 @@ export class InventTasksSettingTab extends PluginSettingTab {
       .setName(t("backup.location"))
       .setDesc(t("backup.locationDesc"))
       .addDropdown((d) => {
-        d.addOption("plugin", t("backup.locationPlugin"))
+        d.addOption("plugin", t("backup.locationPlugin", { dir: this.app.vault.configDir }))
           .addOption("vault", t("backup.locationVault"));
         d.setValue(backup.locationMode);
         d.onChange(async (value) => {
@@ -2038,7 +2037,7 @@ export class InventTasksSettingTab extends PluginSettingTab {
   // one numbered step per non-empty line.
   private renderSetupGuide(containerEl: HTMLElement, title: string, steps: string): void {
     const details = containerEl.createEl("details", { cls: "it-setup-guide" });
-    const summary = details.createEl("summary", { text: title });
+    details.createEl("summary", { text: title });
     const list = details.createEl("ol");
     for (const raw of steps.split("\n")) {
       const line = raw.trim();

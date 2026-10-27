@@ -24,18 +24,18 @@ import { renderTimelineView } from "./timeline-view";
 import { notificationOverview, renderNotificationsView } from "./notifications-view";
 import { renderSystemListView } from "./system-list-view";
 import { applyAppearance, pickAppearance } from "../view-state";
-import { GANTT_RAIL_DEFAULT_W, TIMELINE_RAIL_DEFAULT_W, ZOOM_ORDER, ZOOMS, normalizeTimeRailWidth, shiftKey } from "./time-grid";
+import { GANTT_RAIL_DEFAULT_W, TIMELINE_RAIL_DEFAULT_W, ZOOM_ORDER, normalizeTimeRailWidth, shiftKey } from "./time-grid";
 import { ExportModal } from "../modals/export-modal";
 import { TimeExportModal } from "../modals/time-export-modal";
 import type { ExportScope } from "../data/export";
 import { TimeExportFormat, TimeExportInput } from "../data/timeline-export";
-import { CreateSpaceModal, CreateListModal, QuickTaskModal } from "../modals/create-modals";
+import { CreateSpaceModal, QuickTaskModal } from "../modals/create-modals";
 import { TaskModal } from "../modals/task-modal";
 import { FilterModal, FilterFieldDef, FilterFieldType } from "../modals/filter-modal";
 import { SearchModal } from "../modals/search-modal";
-import { applyFilters, sortTasks, GroupBucket } from "../data/filters";
+import { applyFilters, sortTasks } from "../data/filters";
 import { normalizeSubtaskMode, includeSubtasks, SubtaskMode } from "../data/subtasks";
-import { calendarColorSourceLabel, fieldLabel, fieldLabelFrom, getSubtaskModes, hierarchyLabel, menuLabel, navLabel, t, viewLabel, zoomLabel } from "../i18n";
+import { calendarColorSourceLabel, fieldLabelFrom, getSubtaskModes, hierarchyLabel, menuLabel, navLabel, t, viewLabel, zoomLabel } from "../i18n";
 import { todayKey } from "../utils/dates";
 import { PersistedViewState, groupCollapseKey, locationKey, locationFromKey, toggleCollapsedGroup } from "../view-state";
 import { DeepLinkParams } from "../data/deep-link";
@@ -590,7 +590,7 @@ export class InventTasksMainView extends ItemView {
       sidebar.empty();
       this.renderEmbeddedSidebar(sidebar);
       sidebar.scrollTop = prevScroll;
-      requestAnimationFrame(() => { sidebar.scrollTop = prevScroll; });
+      window.requestAnimationFrame(() => { sidebar.scrollTop = prevScroll; });
     }
     this.plugin.refreshDockedSidebar();
   }
@@ -645,7 +645,7 @@ export class InventTasksMainView extends ItemView {
       this.renderEmbeddedSidebar(sidebar);
       if (prevSidebarScroll > 0) {
         sidebar.scrollTop = prevSidebarScroll;
-        requestAnimationFrame(() => { sidebar.scrollTop = prevSidebarScroll; });
+        window.requestAnimationFrame(() => { sidebar.scrollTop = prevSidebarScroll; });
       }
     }
 
@@ -736,7 +736,7 @@ export class InventTasksMainView extends ItemView {
       hiddenFavs = favs.filter((_, i) => chipEls[i].hasClass("is-overflow-hidden"));
       if (hiddenFavs.length === 0) overflowBtn.removeClass("is-visible");
     };
-    requestAnimationFrame(applyOverflow);
+    window.requestAnimationFrame(applyOverflow);
     const ro = new ResizeObserver(() => applyOverflow());
     ro.observe(bar);
     ro.observe(chips);
@@ -1066,7 +1066,7 @@ export class InventTasksMainView extends ItemView {
       const avail = el.clientWidth - padX;
       el.classList.toggle("is-compact", needed + WRAP_BUFFER > avail);
     };
-    requestAnimationFrame(() => { needed = measure(); apply(); });
+    window.requestAnimationFrame(() => { needed = measure(); apply(); });
     const ro = new ResizeObserver(() => apply());
     ro.observe(el);
     this.rowROs.push(ro);
@@ -1367,7 +1367,7 @@ export class InventTasksMainView extends ItemView {
       const after = this.contentEl.querySelector(".it-main-body") as HTMLElement | null;
       if (after) {
         after.scrollTop = before;
-        requestAnimationFrame(() => { after.scrollTop = before; });
+        window.requestAnimationFrame(() => { after.scrollTop = before; });
       }
     }
   }
@@ -2063,7 +2063,7 @@ export class InventTasksMainView extends ItemView {
         wrap.empty();
         // Restore popover scroll unconditionally (even if it was 0, the rebuild
         // may temporarily move it and a rAF nudge keeps it stable).
-        requestAnimationFrame(() => { root.scrollTop = rootScroll; wrap.scrollTop = wrapScroll; });
+        window.requestAnimationFrame(() => { root.scrollTop = rootScroll; wrap.scrollTop = wrapScroll; });
         wrap.createDiv({ cls: "it-fields-customizer-title", text: t("customize.title", { view: viewLabel(view) }) });
 
         // One "pick a date source" select row — shared by the calendar's Date
@@ -2921,7 +2921,7 @@ export class InventTasksMainView extends ItemView {
         if (ev.key === "Enter") { ev.preventDefault(); submit(); }
         else if (ev.key === "Escape") { ev.preventDefault(); close(); }
       });
-      requestAnimationFrame(() => input.focus());
+      window.requestAnimationFrame(() => input.focus());
     });
   }
 

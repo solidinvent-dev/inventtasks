@@ -8,7 +8,7 @@ import { appendActivity } from "../data/activity";
 import { pickCheckboxCheckedStatus, pickCheckboxUncheckedStatus, type CheckboxAction } from "../data/status-helpers";
 import { ViewState } from "./main-view";
 import { groupTasks, GroupBucket } from "../data/filters";
-import { buildSubtaskTree, flattenSubtaskRows, SubtaskTree, NestedRow, maxSubtaskDepth, canAttachSubtask } from "../data/subtasks";
+import { buildSubtaskTree, flattenSubtaskRows, SubtaskTree, NestedRow, maxSubtaskDepth } from "../data/subtasks";
 import { statusChip, priorityChip, renderTagsCell, showPopover, buildDropdown, applyChipStyleByKind, chipKindForGroupBy, renderGroupHeaderChip, renderListReference } from "../ui/components";
 import { QuickTaskModal } from "../modals/create-modals";
 import { t as tr, fieldLabel, fieldLabelFrom } from "../i18n";
@@ -52,7 +52,7 @@ function restoreListScroll(opts: RenderOpts) {
     if (Number.isFinite(top)) wrap.scrollTop = top;
   };
   apply();
-  requestAnimationFrame(apply);
+  window.requestAnimationFrame(apply);
 }
 
 async function updateTaskPreservingListScroll(
@@ -718,7 +718,7 @@ export function renderListView(opts: RenderOpts) {
   const rememberedTop = Number((state as any).__listScrollTop);
   if (Number.isFinite(rememberedLeft)) wrap.scrollLeft = rememberedLeft;
   if (Number.isFinite(rememberedTop)) wrap.scrollTop = rememberedTop;
-  requestAnimationFrame(() => {
+  window.requestAnimationFrame(() => {
     if (Number.isFinite(rememberedLeft)) wrap.scrollLeft = rememberedLeft;
     if (Number.isFinite(rememberedTop)) wrap.scrollTop = rememberedTop;
   });
@@ -1289,15 +1289,6 @@ function renderPropertyCell(row: HTMLElement, t: TaskFile, field: string, opts: 
       return;
     }
   }
-}
-
-function formatMinsShort(m: number | undefined): string {
-  if (!m) return "";
-  const h = Math.floor(m / 60);
-  const min = m % 60;
-  if (h === 0) return `${min}m`;
-  if (min === 0) return `${h}h`;
-  return `${h}h${min}m`;
 }
 
 function typeEmoji(type?: string): string {

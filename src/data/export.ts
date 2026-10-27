@@ -826,7 +826,7 @@ export function downloadFile(filename: string, content: BlobPart, mime: string) 
   document.body.appendChild(a);
   a.click();
   a.remove();
-  setTimeout(() => URL.revokeObjectURL(url), 0);
+  window.setTimeout(() => URL.revokeObjectURL(url), 0);
 }
 
 // Opens the system print dialog with the given HTML (for "Save as PDF"). Uses a
@@ -843,10 +843,10 @@ export function printHtml(html: string) {
   const win = iframe.contentWindow!;
   const go = () => {
     try { win.focus(); win.print(); } catch { /* ignore */ }
-    setTimeout(() => iframe.remove(), 1000);
+    window.setTimeout(() => iframe.remove(), 1000);
   };
   // Give the iframe a tick to lay out before printing.
-  setTimeout(go, 150);
+  window.setTimeout(go, 150);
 }
 
 // ---------- Image handling for note exports (embed vs folder) ----------

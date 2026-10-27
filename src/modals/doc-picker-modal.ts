@@ -99,7 +99,7 @@ export class DocPickerModal extends Modal {
         confirm();
       }
     });
-    setTimeout(() => searchInput.focus(), 0);
+    window.setTimeout(() => searchInput.focus(), 0);
 
     const footer = c.createDiv({ cls: "it-move-modal-footer" });
     const cancel = footer.createEl("button", { cls: "it-secondary-btn", text: t("common.cancel") });
