@@ -70,7 +70,7 @@ export function isValidSyncPath(path: string): boolean {
   if (typeof path !== "string" || path.length === 0 || path.length > 1024) return false;
   if (path.startsWith("/") || path.includes("\\")) return false;
   if (/^[a-zA-Z]:/.test(path)) return false;
-  // eslint-disable-next-line no-control-regex
+  // eslint-disable-next-line no-control-regex -- control characters are exactly what a sync path must not contain
   if (/[\u0000-\u001f]/.test(path)) return false;
   const segments = path.split("/");
   return segments.every((s) => s.length > 0 && s !== "." && s !== "..");

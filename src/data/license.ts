@@ -9,7 +9,7 @@
 //
 // Everything here is DERIVED from the key on each call (never a stored
 // "is licensed" flag), so editing persisted settings cannot widen a limit.
-import { ed25519, edwardsToMontgomeryPub, x25519 } from "@noble/curves/ed25519";
+import { ed25519, x25519 } from "@noble/curves/ed25519";
 import { bytesToHex, hexToBytes } from "@noble/hashes/utils";
 
 /** Public half of the vendor signing key (scripts/license/keygen.mjs). */
@@ -203,9 +203,9 @@ async function envelopeKey(shared: Uint8Array, nonceHex: string): Promise<Crypto
 
 /** Seal the licence email to the vendor key for one status request. */
 export async function sealEmail(email: string, ts: number, nonceHex: string): Promise<SealedEmail> {
-	const ephPriv = x25519.utils.randomPrivateKey();
+	const ephPriv = x25519.utils.randomSecretKey();
 	const ephPub = x25519.getPublicKey(ephPriv);
-	const shared = x25519.getSharedSecret(ephPriv, edwardsToMontgomeryPub(hexToBytes(VENDOR_PUBLIC_KEY)));
+	const shared = x25519.getSharedSecret(ephPriv, ed25519.utils.toMontgomery(hexToBytes(VENDOR_PUBLIC_KEY)));
 	const key = await envelopeKey(shared, nonceHex);
 	const iv = crypto.getRandomValues(new Uint8Array(12));
 	const ct = await crypto.subtle.encrypt(
