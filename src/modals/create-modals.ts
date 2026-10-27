@@ -47,7 +47,7 @@ function renderIdentityPreview(parent: HTMLElement, name: string, icon: string, 
   const swatch = wrap.createSpan({ cls: "it-create-preview-swatch" });
   swatch.style.background = color;
   const iconEl = renderIconish(swatch, icon || fallback, { cls: "it-create-preview-icon" });
-  if (iconEl) iconEl.style.color = "#fff";
+  if (iconEl) iconEl.addClass("it-icon-on-color");
   wrap.createSpan({ cls: "it-create-preview-name", text: name || t("common.untitled") });
 }
 
@@ -500,7 +500,7 @@ export class QuickTaskModal extends Modal {
     };
 
     input.addEventListener("keydown", (ev) => {
-      if (ev.key === "Enter") { ev.preventDefault(); submit(); }
+      if (ev.key === "Enter") { ev.preventDefault(); void submit(); }
       else if (ev.key === "Escape") this.close();
     });
 

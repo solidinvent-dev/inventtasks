@@ -272,7 +272,7 @@ export class TaskModal extends Modal {
     const change = actions.createEl("button", { cls: "it-cover-btn", text: tr("task.cover.change"), attr: { type: "button" } });
     change.addEventListener("click", (e) => { e.stopPropagation(); this.openCoverMenu(e.currentTarget as HTMLElement); });
     const remove = actions.createEl("button", { cls: "it-cover-btn", text: tr("task.cover.remove"), attr: { type: "button" } });
-    remove.addEventListener("click", (e) => { e.stopPropagation(); this.setCover(undefined); });
+    remove.addEventListener("click", (e) => { e.stopPropagation(); void this.setCover(undefined); });
   }
 
   private openCoverMenu(anchor: HTMLElement) {
@@ -288,7 +288,7 @@ export class TaskModal extends Modal {
       setIcon(up.createSpan({ cls: "it-cover-menu-ic" }), "upload");
       up.createSpan({ text: tr("task.cover.upload") });
       const fileInput = root.createEl("input", { type: "file", attr: { accept: "image/*" } });
-      fileInput.style.display = "none";
+      fileInput.hide();
       up.addEventListener("click", () => fileInput.click());
       fileInput.addEventListener("change", async () => {
         if (!fileInput.files?.length) return;
@@ -1564,7 +1564,7 @@ export class TaskModal extends Modal {
             this.render();
           });
           ta.addEventListener("keydown", (ev) => {
-            if ((ev.metaKey || ev.ctrlKey) && ev.key === "Enter") { ev.preventDefault(); doSave(); }
+            if ((ev.metaKey || ev.ctrlKey) && ev.key === "Enter") { ev.preventDefault(); void doSave(); }
             else if (ev.key === "Escape") { ev.preventDefault(); this.editingCommentId = null; this.render(); }
           });
         } else {
@@ -1592,7 +1592,7 @@ export class TaskModal extends Modal {
     };
     submit.addEventListener("click", doSubmit);
     addArea.addEventListener("keydown", (ev) => {
-      if ((ev.metaKey || ev.ctrlKey) && ev.key === "Enter") { ev.preventDefault(); doSubmit(); }
+      if ((ev.metaKey || ev.ctrlKey) && ev.key === "Enter") { ev.preventDefault(); void doSubmit(); }
     });
   }
 
@@ -1633,7 +1633,7 @@ export class TaskModal extends Modal {
         cb.checked = it.done;
         cb.addEventListener("change", () => {
           const next = items.map((x) => (x.id === it.id ? { ...x, done: cb.checked } : x));
-          commit(next, { kind: cb.checked ? "checklist_checked" : "checklist_unchecked", id: it.id, text: it.text });
+          void commit(next, { kind: cb.checked ? "checklist_checked" : "checklist_unchecked", id: it.id, text: it.text });
         });
         const input = row.createEl("input", { type: "text", cls: "it-checklist-text" });
         input.value = it.text;
@@ -1641,11 +1641,11 @@ export class TaskModal extends Modal {
         input.addEventListener("change", () => {
           const text = input.value.trim();
           if (!text) {
-            commit(items.filter((x) => x.id !== it.id), { kind: "checklist_removed", id: it.id, text: it.text });
+            void commit(items.filter((x) => x.id !== it.id), { kind: "checklist_removed", id: it.id, text: it.text });
             return;
           }
           if (text === it.text) return;
-          commit(items.map((x) => (x.id === it.id ? { ...x, text } : x)), { kind: "checklist_text_changed", id: it.id, from: it.text, to: text });
+          void commit(items.map((x) => (x.id === it.id ? { ...x, text } : x)), { kind: "checklist_text_changed", id: it.id, from: it.text, to: text });
         });
         const rm = row.createEl("button", {
           cls: "it-icon-btn it-icon-btn-mini it-checklist-remove",
@@ -1653,7 +1653,7 @@ export class TaskModal extends Modal {
         });
         setIcon(rm, "x");
         rm.addEventListener("click", () => {
-          commit(items.filter((x) => x.id !== it.id), { kind: "checklist_removed", id: it.id, text: it.text });
+          void commit(items.filter((x) => x.id !== it.id), { kind: "checklist_removed", id: it.id, text: it.text });
         });
       }
     }
@@ -1681,10 +1681,10 @@ export class TaskModal extends Modal {
         await commit([...items, item], { kind: "checklist_added", id: item.id, text });
       };
       input.addEventListener("keydown", (ev) => {
-        if (ev.key === "Enter") { ev.preventDefault(); save(); }
+        if (ev.key === "Enter") { ev.preventDefault(); void save(); }
         else if (ev.key === "Escape") { ev.preventDefault(); cancel(); }
       });
-      input.addEventListener("blur", () => { save(); });
+      input.addEventListener("blur", () => { void save(); });
       setTimeout(() => input.focus(), 0);
     });
   }
@@ -1727,7 +1727,7 @@ export class TaskModal extends Modal {
     onRename: (name: string) => Promise<void>,
   ): void {
     if (row.querySelector(".it-attachment-rename-input")) return;
-    link.style.display = "none";
+    link.hide();
     const input = row.createEl("input", {
       type: "text",
       cls: "it-input it-attachment-rename-input",
@@ -1740,7 +1740,7 @@ export class TaskModal extends Modal {
       if (finished) return;
       finished = true;
       input.remove();
-      link.style.display = "";
+      link.show();
     };
     const save = async () => {
       if (finished) return;
@@ -1751,7 +1751,7 @@ export class TaskModal extends Modal {
       catch (e: any) {
         new Notice(tr("task.notice.failed", { msg: e.message }));
         input.remove();
-        link.style.display = "";
+        link.show();
       }
     };
     input.addEventListener("keydown", (ev) => {
@@ -1821,7 +1821,7 @@ export class TaskModal extends Modal {
 
     // Hidden <input type=file>, triggered by the button.
     const fileInput = sec.createEl("input", { type: "file", attr: { multiple: "true" } });
-    fileInput.style.display = "none";
+    fileInput.hide();
     addBtn.addEventListener("click", () => fileInput.click());
     this.bindAttachmentDrop(sec, (files) => addMainAttachments(this.plugin.index, t.data.id, files));
     fileInput.addEventListener("change", async () => {
@@ -2375,7 +2375,7 @@ export class TaskModal extends Modal {
           // Legacy LinkedValue fallback
           if (typeof value === "object" && typeof value.value === "string") {
             const v: string = value.value;
-            if (/^[a-z][a-z0-9+.\-]*:\/\//i.test(v)) return { label: value.label, url: v };
+            if (/^[a-z][a-z0-9+.-]*:\/\//i.test(v)) return { label: value.label, url: v };
             return { label: value.label || v };
           }
           if (typeof value === "string" && value) return { label: value };
@@ -2425,7 +2425,7 @@ export class TaskModal extends Modal {
         i.value = value ?? "";
         i.addEventListener("change", () => {
           const n = parseFloat(i.value);
-          setValue(isNaN(n) ? null : n);
+          void setValue(isNaN(n) ? null : n);
         });
         break;
       }
@@ -2436,7 +2436,7 @@ export class TaskModal extends Modal {
         wrap.createSpan({ text: " " + (f.currency || "PLN"), cls: "it-input-suffix" });
         i.addEventListener("change", () => {
           const n = parseFloat(i.value);
-          setValue(isNaN(n) ? null : n);
+          void setValue(isNaN(n) ? null : n);
         });
         break;
       }
@@ -2490,7 +2490,7 @@ export class TaskModal extends Modal {
                 { value: null as any, label: tr("task.customFields.noneOption"), color: "#9E9E9E" },
               ],
               onSelect: (v) => {
-                setValue(v ?? null);
+                void setValue(v ?? null);
                 document.querySelectorAll(".it-popover").forEach((el) => el.remove());
               },
             });
@@ -2512,7 +2512,7 @@ export class TaskModal extends Modal {
           chip.addEventListener("click", () => {
             const idx = cur.indexOf(id);
             if (idx >= 0) cur.splice(idx, 1); else cur.push(id);
-            setValue(cur.slice());
+            void setValue(cur.slice());
             chip.toggleClass("is-active", cur.includes(id));
           });
         }
@@ -2571,7 +2571,7 @@ export class TaskModal extends Modal {
           const x = chip.createSpan({ text: "×", cls: "it-tag-remove" });
           x.addEventListener("click", (ev) => {
             ev.stopPropagation();
-            setValue(ids.filter((i) => i !== id));
+            void setValue(ids.filter((i) => i !== id));
           });
         }
         // Action sits in its own row so chips never touch the add button —
@@ -2611,7 +2611,7 @@ export class TaskModal extends Modal {
           chip.createSpan({ cls: "it-chip-link-title", text: displayTitle });
           if (doc) chip.addEventListener("click", () => this.openLinkedDoc(doc));
           const x = chip.createSpan({ text: "×", cls: "it-tag-remove" });
-          x.addEventListener("click", (ev) => { ev.stopPropagation(); setValue(ids.filter((i) => i !== id)); });
+          x.addEventListener("click", (ev) => { ev.stopPropagation(); void setValue(ids.filter((i) => i !== id)); });
         }
         const actions = wrap.createDiv({ cls: "it-cf-tasks-actions" });
         const add = actions.createEl("button", { cls: "it-btn-ghost", text: tr("task.customFields.linkDoc") });
@@ -2677,7 +2677,7 @@ export class TaskModal extends Modal {
         }
         const addRow = wrap.createDiv({ cls: "it-attachment-add" });
         const fileInput = addRow.createEl("input", { type: "file", attr: { multiple: "true" } });
-        fileInput.style.display = "none";
+        fileInput.hide();
         const addBtn = addRow.createEl("button", { cls: "it-btn-ghost", text: tr("task.attachments.add") });
         addBtn.addEventListener("click", () => fileInput.click());
         this.bindAttachmentDrop(wrap, (files) => addCfAttachments(this.plugin.index, this.task.data.id, f.id, files));

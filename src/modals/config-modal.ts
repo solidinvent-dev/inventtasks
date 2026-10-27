@@ -432,7 +432,7 @@ export class ConfigModal extends Modal {
     new Setting(parent).setName(t("cfg.description")).addTextArea((el) => {
       el.setValue(this.draft.description).onChange((v) => (this.draft.description = v));
       el.inputEl.rows = 4;
-      el.inputEl.style.width = "100%";
+      el.inputEl.addClass("it-input-full");
     });
     this.renderNotificationsScopeSetting(parent);
     this.renderDefaultViewRow(parent);

@@ -212,7 +212,7 @@ export function renderSidebar(parent: HTMLElement, opts: SidebarOptions) {
 
   const notesBtn = headerShortcuts.createEl("button", { cls: "it-icon-btn it-sidebar-shortcut-btn" + (opts.current.kind === "short_notes" ? " is-active" : ""), attr: { "aria-label": t("nav.shortNotes"), title: t("nav.shortNotes") } });
   setIcon(notesBtn, "sticky-note");
-  notesBtn.style.color = "#FACC15";
+  notesBtn.addClass("it-shortcut-notes");
   notesBtn.addEventListener("click", () => opts.onSelect({ kind: "short_notes" }));
 
   const syncNowBtn = headerShortcuts.createEl("button", {
@@ -220,7 +220,7 @@ export function renderSidebar(parent: HTMLElement, opts: SidebarOptions) {
     attr: { "aria-label": t("calSync.syncNowBtn"), title: t("calSync.syncNowBtn") },
   });
   setIcon(syncNowBtn, "refresh-cw");
-  syncNowBtn.style.color = "#22C55E";
+  syncNowBtn.addClass("it-shortcut-sync");
   syncNowBtn.addEventListener("click", async () => {
     syncNowBtn.disabled = true;
     syncNowBtn.setAttribute("aria-label", t("calSync.syncing"));

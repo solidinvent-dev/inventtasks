@@ -58,7 +58,7 @@ export class ImportModal extends Modal {
     const fileRow = c.createDiv({ cls: "it-import-row" });
     const pick = fileRow.createEl("button", { cls: "it-btn-secondary", text: this.bundle ? t("import.chooseDifferent") : t("import.chooseFile") });
     const input = fileRow.createEl("input", { type: "file", attr: { accept: ".json,application/json" } });
-    input.style.display = "none";
+    input.hide();
     pick.addEventListener("click", () => input.click());
     input.addEventListener("change", async () => {
       const f = input.files?.[0];

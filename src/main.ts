@@ -492,7 +492,6 @@ export default class InventTasksPlugin extends Plugin {
     this.vaultSyncManager?.stop();
     this.index?.unload();
     this.secretFieldSession.lockAll();
-    this.app.workspace.detachLeavesOfType(VIEW_TYPE_INVENTTASKS_SIDEBAR);
     document.body.removeClass("it-bg-white", "it-bg-black");
   }
 
@@ -1393,8 +1392,7 @@ export default class InventTasksPlugin extends Plugin {
     const placement = this.prefs.sidebarPlacement;
 
     if (placement === "embedded") {
-      this.app.workspace.detachLeavesOfType(VIEW_TYPE_INVENTTASKS_SIDEBAR);
-      return;
+        return;
     }
 
     const existing = this.app.workspace.getLeavesOfType(VIEW_TYPE_INVENTTASKS_SIDEBAR);

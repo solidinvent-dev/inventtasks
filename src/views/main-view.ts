@@ -1043,8 +1043,7 @@ export class InventTasksMainView extends ItemView {
       // shrunken scrollWidth if it's already wrapped — force it to one line for
       // the measurement so `needed` is the true natural one-line width.
       const wrappers = Array.from(el.querySelectorAll(".it-topbar-controls")) as HTMLElement[];
-      const prev = wrappers.map((w) => w.style.flexWrap);
-      for (const w of wrappers) w.style.flexWrap = "nowrap";
+      for (const w of wrappers) w.addClass("it-measure-nowrap");
       const gap = parseFloat(getComputedStyle(el).columnGap) || 0;
       const kids = Array.from(el.children) as HTMLElement[];
       let sum = gap * Math.max(0, kids.length - 1);
@@ -1052,7 +1051,7 @@ export class InventTasksMainView extends ItemView {
         if (k.classList.contains("it-flex-grow")) continue; // the elastic spacer
         sum += k.scrollWidth; // natural content width (ignores visual shrink/wrap)
       }
-      wrappers.forEach((w, i) => { w.style.flexWrap = prev[i]; });
+      wrappers.forEach((w) => w.removeClass("it-measure-nowrap"));
       return sum;
     };
     // Buffer (~one button's worth) so we compact a touch BEFORE the exact wrap
@@ -1738,7 +1737,7 @@ export class InventTasksMainView extends ItemView {
   openTask(t: TaskFile) {
     this.plugin.pushRecentTask(t.data.id);
     if (this.plugin.prefs.openTaskMode === "editor") {
-      this.plugin.index.openTaskInEditor(t.data.id);
+      void this.plugin.index.openTaskInEditor(t.data.id);
     } else {
       new TaskModal(this.app, this.plugin, t).open();
     }
@@ -2710,7 +2709,7 @@ export class InventTasksMainView extends ItemView {
         tree.removeClass("it-doc-drop-root");
         if (ev.target !== tree) return;
         const src = this.docDragPageId; this.docDragPageId = undefined;
-        if (src) this.reparentDocPage(doc, src, null);
+        if (src) void this.reparentDocPage(doc, src, null);
       });
     }
 
@@ -2766,7 +2765,7 @@ export class InventTasksMainView extends ItemView {
       content.createDiv({ cls: "it-empty-row", text: t("doc.emptyPage") });
       return;
     }
-    MarkdownRenderer.render(this.app, body, content, page.__path || "", this);
+    void MarkdownRenderer.render(this.app, body, content, page.__path || "", this);
   }
 
   private renderDocPageRow(parent: HTMLElement, doc: DocMeta, pages: DocPage[], page: DocPage, depth: number) {
@@ -2820,7 +2819,7 @@ export class InventTasksMainView extends ItemView {
       e.stopPropagation();
       row.removeClass("it-doc-drop-target");
       const src = this.docDragPageId; this.docDragPageId = undefined;
-      if (src && src !== page.page_id) this.reparentDocPage(doc, src, page.page_id);
+      if (src && src !== page.page_id) void this.reparentDocPage(doc, src, page.page_id);
     });
 
     if (hasChildren && !collapsed) for (const ch of children) this.renderDocPageRow(parent, doc, pages, ch, depth + 1);
@@ -2900,7 +2899,7 @@ export class InventTasksMainView extends ItemView {
   private openPageInObsidian(page: DocPage) {
     if (!page.__path) return;
     const f = this.app.vault.getAbstractFileByPath(page.__path);
-    if (f instanceof TFile) this.app.workspace.getLeaf("tab").openFile(f);
+    if (f instanceof TFile) void this.app.workspace.getLeaf("tab").openFile(f);
   }
 
   private promptViewName(anchor: HTMLElement, initial: string, onName: (name: string) => void, placeholder = t("main.viewName")) {

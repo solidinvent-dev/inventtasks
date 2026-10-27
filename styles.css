@@ -8362,3 +8362,67 @@ body.theme-dark.it-bg-black :is(.inventtasks-root, .inventtasks-sidebar-leaf, .i
 .it-search-scope-item input {
   margin: 0;
 }
+
+/* ------------------------------------------------------------------------
+ * Styles that used to be assigned from code (Obsidian's community-plugin
+ * guidelines ask for classes instead, so themes and snippets can adjust them).
+ * Each rule mirrors the inline style it replaced; !important is kept where the
+ * inline value had it or had to beat a more specific rule.
+ * --------------------------------------------------------------------- */
+
+/* Floating popovers and context menus — top/left/max-height stay dynamic. */
+.it-popover.it-popover-floating { position: fixed; z-index: 9999; overflow-y: auto; }
+.it-popover.it-ctx-menu { position: fixed; z-index: 10000; overflow-y: auto; }
+.it-popover.it-measuring { visibility: hidden; }
+
+/* Off-screen helpers. */
+.it-print-frame { position: fixed; right: 0; bottom: 0; width: 0; height: 0; border: 0; }
+.it-hidden-color-input { position: fixed; opacity: 0; }
+.it-safe-bottom-probe {
+  position: fixed; left: -9999px; bottom: 0; width: 1px; visibility: hidden;
+  height: var(--it-mobile-safe-bottom, 48px);
+}
+.it-tg-rail-measure > .it-tg-measure-clone {
+  position: static !important;
+  width: max-content !important;
+  max-width: none !important;
+}
+
+/* Inputs and small layout bits. */
+.it-input-full { width: 100%; }
+.it-input-90 { width: 90px; }
+.it-mt-4 { margin-top: 4px; }
+.it-icon-on-color { color: #fff; }
+.it-dt-icon-pad { padding-left: 20px !important; }
+.it-chip.it-chip-muted { --chip-color: var(--text-muted); }
+
+/* List view grid placement. */
+.it-list-sentinel { grid-column: 1 / -1; height: 1px; }
+.it-subgrid-row { grid-column: 1 / -1; display: grid; grid-template-columns: subgrid; }
+.it-gc-check { grid-column: check; }
+.it-gc-type { grid-column: type; }
+.it-gc-title { grid-column: title; }
+.it-gc-actions { grid-column: actions; }
+.it-topbar-controls.it-measure-nowrap { flex-wrap: nowrap; }
+
+/* Table view. */
+col.it-col-select { width: 34px; }
+col.it-col-actions { width: 44px; }
+td.it-table-sentinel-cell { height: 1px; padding: 0; border: none; }
+
+/* Sidebar shortcut colours. */
+.it-sidebar-shortcut-btn.it-shortcut-notes { color: #FACC15; }
+.it-sidebar-shortcut-btn.it-shortcut-sync { color: #22C55E; }
+
+/* Settings. */
+.it-pro-btn.it-pro-btn-row { display: inline-flex !important; align-items: center !important; gap: 7px !important; }
+.it-setup-guide {
+  margin: 4px 0 14px; border: 1px solid var(--background-modifier-border);
+  border-radius: 8px; padding: 6px 12px; background: var(--background-secondary);
+}
+.it-setup-guide > summary { cursor: pointer; font-weight: 600; padding: 4px 0; }
+.it-setup-guide > ol { margin: 8px 0 4px; padding-left: 20px; line-height: 1.6; font-size: 13px; }
+.setting-item-description.inventtasks-caldav-note {
+  white-space: pre-line; padding: 8px 12px; border-left: 3px solid var(--interactive-accent);
+  margin: 4px 0 12px; background: var(--background-secondary);
+}

@@ -182,6 +182,7 @@ export function safeExternalHref(value: string): string {
   // Strip leading whitespace and C0/C1 control characters first: a browser
   // ignores them when parsing the scheme, so a padded "javascript:" payload
   // would otherwise slip past a naive prefix check.
+  // eslint-disable-next-line no-control-regex -- strips leading control characters a crafted URL could hide behind
   const v = value.replace(/^[\s\u0000-\u001F\u007F-\u009F]+/, "");
   if (!v) return "";
   if (isSafeLinkHref(v)) return v;

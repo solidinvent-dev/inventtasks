@@ -52,9 +52,10 @@ export function attachDateTimeOverlay(input: HTMLInputElement, kind: "date" | "t
   parent.insertBefore(host, input);
   host.appendChild(input);
 
-  // Reserve room on the left for the leading icon. Inline style so it wins over
-  // every context's padding rule (incl. the more-specific `.is-mobile` ones).
-  input.style.paddingLeft = "20px";
+  // Reserve room on the left for the leading icon. The class carries
+  // !important so it wins over every context's padding rule (incl. the
+  // more-specific `.is-mobile` ones), as the inline style used to.
+  input.addClass("it-dt-icon-pad");
 
   // Leading icon (calendar / clock) — opens the native picker on click and
   // stays visible while editing. The stylesheet positions it in the left pad.

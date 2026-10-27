@@ -296,7 +296,7 @@ export function formatDuration(minutes: number | undefined | null): string {
 // Whether times render in 24-hour form. With no argument it reflects the
 // process-wide configured time format (the single source of truth); pass an
 // explicit format only to test a specific value.
-export function uses24HourTime(format?: string | undefined | null): boolean {
+export function uses24HourTime(format?: string | null): boolean {
   return (format ?? _timeFormat ?? "HH:mm") === "HH:mm";
 }
 

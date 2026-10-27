@@ -1,6 +1,6 @@
 import { Platform } from "obsidian";
 import { TaskFile, StatusDef, PriorityDef, TagDef, ChipKind, ResolvedChipStyle, ResolvedChipStyles } from "../types";
-import { flagSvg, renderIconish } from "./icons";
+import { appendSvg, flagSvg, renderIconish } from "./icons";
 import { isOverdue, formatDate } from "../utils/dates";
 import { t } from "../i18n";
 
@@ -9,12 +9,11 @@ import { t } from "../i18n";
 // getComputedStyle returns the unresolved `max(...)` string for custom props, so
 // we probe with a throwaway element whose height is that var and measure it.
 // Used to keep fixed popovers / context menus clear of the system bottom bar.
-export function mobileBottomInset(): number {
+export function mobileBottomInset(doc: Document = document): number {
   if (!Platform.isMobile) return 0;
-  const probe = document.createElement("div");
-  probe.style.cssText =
-    "position:fixed;left:-9999px;bottom:0;width:1px;visibility:hidden;height:var(--it-mobile-safe-bottom,48px);";
-  document.body.appendChild(probe);
+  const probe = doc.createElement("div");
+  probe.className = "it-safe-bottom-probe";
+  doc.body.appendChild(probe);
   const h = probe.getBoundingClientRect().height;
   probe.remove();
   const px = Math.round(h);
@@ -124,7 +123,7 @@ export function renderGroupHeaderChip(
     chip.style.setProperty("--chip-color", bucket.color || "var(--text-faint)");
     applyChipStyleByKind(chip, "priority", styles);
     const flag = chip.createSpan({ cls: "it-priority-flag" });
-    flag.innerHTML = flagSvg(bucket.color || "var(--text-faint)");
+    appendSvg(flag, flagSvg(bucket.color || "var(--text-faint)"));
     chip.createSpan({ text: bucket.label, cls: "it-chip-label" });
     return chip;
   }
@@ -165,7 +164,7 @@ export function statusChip(parent: HTMLElement, status: StatusDef | undefined, o
     chip.style.setProperty("--chip-color", status.color);
     chip.setAttribute("data-group", status.group);
   } else {
-    chip.style.setProperty("--chip-color", "var(--text-muted)");
+    chip.addClass("it-chip-muted");
   }
   applyChipStyleByKind(chip, "status", styles);
   if (onClick) chip.addEventListener("click", (e) => { e.stopPropagation(); onClick(e); });
@@ -178,7 +177,7 @@ export function priorityChip(parent: HTMLElement, priority: 1 | 2 | 3 | 4 | null
   wrap.style.setProperty("--chip-color", def?.color || "var(--text-faint)");
   applyChipStyleByKind(wrap, "priority", styles);
   const ico = wrap.createSpan({ cls: "it-priority-flag" });
-  ico.innerHTML = flagSvg(def?.color || "var(--text-faint)");
+  appendSvg(ico, flagSvg(def?.color || "var(--text-faint)"));
   wrap.createSpan({ text: def?.label || "—", cls: "it-chip-label" });
   if (onClick) wrap.addEventListener("click", (e) => { e.stopPropagation(); onClick(e); });
   return wrap;
@@ -262,7 +261,7 @@ export function buildDropdown<T>(opts: {
       row.createSpan({ text: f.label });
       row.addEventListener("click", (e) => {
         e.stopPropagation();
-        document.querySelectorAll(".it-popover").forEach((el) => el.remove());
+        row.ownerDocument.querySelectorAll(".it-popover").forEach((el) => el.remove());
         f.onClick();
       });
     }
@@ -271,14 +270,16 @@ export function buildDropdown<T>(opts: {
 }
 
 export function showPopover(target: HTMLElement, build: (root: HTMLElement) => void) {
+  // Open in the target's own window (settings live in a separate window since
+  // Obsidian 1.14; views can be popped out).
+  const doc = target.ownerDocument;
+  const win = doc.defaultView ?? window;
   // Remove existing popovers
-  document.querySelectorAll(".it-popover").forEach((el) => el.remove());
+  doc.querySelectorAll(".it-popover").forEach((el) => el.remove());
   const rect = target.getBoundingClientRect();
-  const popover = document.createElement("div");
-  popover.className = "it-popover";
-  popover.style.position = "fixed";
-  popover.style.zIndex = "9999";
-  document.body.appendChild(popover);
+  const popover = doc.createElement("div");
+  popover.className = "it-popover it-popover-floating";
+  doc.body.appendChild(popover);
   build(popover);
 
   // Cap the height to whichever side (below / above the target) has more room,
@@ -289,36 +290,35 @@ export function showPopover(target: HTMLElement, build: (root: HTMLElement) => v
   const natural = popover.offsetHeight;
   // On mobile, treat the area behind Obsidian's bottom navbar as unavailable so
   // the popover (and its lowest, often most-used items) stays tappable.
-  const usableBottom = window.innerHeight - mobileBottomInset();
+  const usableBottom = win.innerHeight - mobileBottomInset(doc);
   const spaceBelow = usableBottom - rect.bottom - gap - margin;
   const spaceAbove = rect.top - gap - margin;
   const placeBelow = natural <= spaceBelow || spaceBelow >= spaceAbove;
   popover.style.maxHeight = `${Math.max(140, placeBelow ? spaceBelow : spaceAbove)}px`;
-  popover.style.overflowY = "auto";
 
   const ph = popover.offsetHeight; // re-measure after the cap
   const pw = popover.offsetWidth;
   const top = placeBelow ? rect.bottom + gap : Math.max(margin, rect.top - ph - gap);
   let left = rect.left;
-  if (left + pw > window.innerWidth - margin) left = Math.max(margin, window.innerWidth - pw - margin);
+  if (left + pw > win.innerWidth - margin) left = Math.max(margin, win.innerWidth - pw - margin);
   popover.style.top = `${top}px`;
   popover.style.left = `${left}px`;
   const closer = (ev: MouseEvent) => {
     if (!popover.contains(ev.target as Node)) {
       popover.remove();
-      document.removeEventListener("mousedown", closer, true);
-      document.removeEventListener("keydown", esc, true);
+      doc.removeEventListener("mousedown", closer, true);
+      doc.removeEventListener("keydown", esc, true);
     }
   };
   const esc = (ev: KeyboardEvent) => {
     if (ev.key === "Escape") {
       popover.remove();
-      document.removeEventListener("mousedown", closer, true);
-      document.removeEventListener("keydown", esc, true);
+      doc.removeEventListener("mousedown", closer, true);
+      doc.removeEventListener("keydown", esc, true);
     }
   };
   setTimeout(() => {
-    document.addEventListener("mousedown", closer, true);
-    document.addEventListener("keydown", esc, true);
+    doc.addEventListener("mousedown", closer, true);
+    doc.addEventListener("keydown", esc, true);
   }, 0);
 }

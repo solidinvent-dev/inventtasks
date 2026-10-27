@@ -781,14 +781,14 @@ export function renderTableView(opts: RenderOpts) {
   });
   const table = tableWrap.createEl("table", { cls: "it-table is-fixed" });
   const colgroup = table.createEl("colgroup");
-  const selColEl = colgroup.createEl("col"); selColEl.style.width = "34px";
+  colgroup.createEl("col", { cls: "it-col-select" });
   const colEls: Record<string, HTMLElement> = {};
   for (const col of visible) {
     const c = colgroup.createEl("col");
     c.style.width = colWidth(col, widths, customFields, headerLabel(col)) + "px";
     colEls[col] = c;
   }
-  const actColEl = colgroup.createEl("col"); actColEl.style.width = "44px";
+  colgroup.createEl("col", { cls: "it-col-actions" });
 
   // Table width = sum of column widths (explicit px). Keeps fixed-layout
   // clipping honest — columns shrink below content and the wrap scrolls
@@ -819,7 +819,7 @@ export function renderTableView(opts: RenderOpts) {
     const idx = 1 + visible.indexOf(col); // 0 = the selection column
     if (idx < 1) return;
     table.removeClass("is-fixed");
-    colEl.style.width = "";
+    colEl.style.removeProperty("width");
     void table.offsetWidth; // force reflow into content-based layout
     let max = 40;
     tbody.querySelectorAll("tr.it-table-row, tr.it-table-colhead-row").forEach((el) => {
@@ -1058,7 +1058,7 @@ export function renderTableView(opts: RenderOpts) {
   if (next < items.length) {
     const sentinelRow = tbody.createEl("tr", { cls: "it-table-sentinel" });
     const sCell = sentinelRow.createEl("td", { attr: { colspan: String(visible.length + 2) } });
-    sCell.style.height = "1px"; sCell.style.padding = "0"; sCell.style.border = "none";
+    sCell.addClass("it-table-sentinel-cell");
     const io = new IntersectionObserver((entries) => {
       if (!entries.some((e) => e.isIntersecting)) return;
       renderChunk(60);
@@ -1078,8 +1078,8 @@ function renderBulkBar(bar: HTMLElement, selected: Set<string>, opts: RenderOpts
   const fieldLabels = (context as any).fieldLabels as Record<string, string> | undefined;
   const flabel = (key: string) => fieldLabelFrom(fieldLabels, key);
   const count = selected.size;
-  if (count === 0) { bar.style.display = "none"; return; }
-  bar.style.display = "";
+  if (count === 0) { bar.hide(); return; }
+  bar.show();
 
   bar.createSpan({ cls: "it-bulk-count", text: i18n("table.bulkSelectedCount", { count }) });
   const ids = () => Array.from(selected);

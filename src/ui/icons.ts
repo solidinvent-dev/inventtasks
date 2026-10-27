@@ -32,6 +32,17 @@ export function renderCfTypeIcon(
   return span;
 }
 
+/**
+ * Insert one of the plugin's own SVG strings. Parsed as SVG rather than
+ * assigned through innerHTML, so nothing in the string is treated as markup or
+ * script; every string passed here declares the SVG namespace.
+ */
+export function appendSvg(el: HTMLElement, svg: string): void {
+  const node = new DOMParser().parseFromString(svg, "image/svg+xml").documentElement;
+  if (node.namespaceURI !== "http://www.w3.org/2000/svg" || node.localName !== "svg") return;
+  el.appendChild(el.ownerDocument.importNode(node, true));
+}
+
 export function flagSvg(color: string): string {
   // The color comes from user-editable config frontmatter and is interpolated
   // into markup — restrict it to safe CSS color forms (hex / var() / rgb/hsl /
@@ -39,7 +50,7 @@ export function flagSvg(color: string): string {
   const safe = /^(#[0-9a-fA-F]{3,8}|var\(--[\w-]+\)|(rgb|rgba|hsl|hsla)\([\d\s.,%/]*\)|[a-zA-Z]+)$/.test(color.trim())
     ? color.trim()
     : "var(--text-faint)";
-  return `<svg viewBox="0 0 16 16" width="14" height="14" fill="${safe}" aria-hidden="true"><path d="M3 1.5a.5.5 0 0 0-1 0v13a.5.5 0 0 0 1 0V9.55l1.4-.35 4.2 1.4a.5.5 0 0 0 .15.02l5-.5a.5.5 0 0 0 .25-.92l-3-2 3-3a.5.5 0 0 0-.35-.84l-5 .5L4.5 1.55 3 1.95V1.5z"/></svg>`;
+  return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16" width="14" height="14" fill="${safe}" aria-hidden="true"><path d="M3 1.5a.5.5 0 0 0-1 0v13a.5.5 0 0 0 1 0V9.55l1.4-.35 4.2 1.4a.5.5 0 0 0 .15.02l5-.5a.5.5 0 0 0 .25-.92l-3-2 3-3a.5.5 0 0 0-.35-.84l-5 .5L4.5 1.55 3 1.95V1.5z"/></svg>`;
 }
 
 export function emoji(value: string | undefined, fallback: string = "📋"): string {

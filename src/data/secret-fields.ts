@@ -1,4 +1,5 @@
 import type { SecretFieldsConfig, SecretFieldValue } from "../types";
+import { scalarText } from "../utils/text";
 
 const DEFAULT_ITERATIONS = 310_000;
 const VERIFIER_TEXT = "InventTasks workspace secret fields v1";
@@ -198,7 +199,7 @@ export class SecretFieldSession {
     const session = this.unlocked.get(workspaceId)!;
     // Legacy plaintext is intentionally visible only in an unlocked session;
     // the next edit/save upgrades it to encrypted storage.
-    if (!isEncryptedSecretValue(value)) return value == null ? "" : String(value);
+    if (!isEncryptedSecretValue(value)) return scalarText(value);
     return session.plaintext.get(valueKey(value)) ?? null;
   }
 
@@ -211,7 +212,7 @@ export class SecretFieldSession {
   async decrypt(workspaceId: string, config: SecretFieldsConfig, value: unknown): Promise<string | null> {
     const session = this.unlocked.get(workspaceId);
     if (!session || session.fingerprint !== fingerprint(config)) return null;
-    if (!isEncryptedSecretValue(value)) return value == null ? "" : String(value);
+    if (!isEncryptedSecretValue(value)) return scalarText(value);
     const cached = session.plaintext.get(valueKey(value));
     if (cached !== undefined) return cached;
     try {

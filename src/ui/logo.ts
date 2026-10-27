@@ -14,6 +14,7 @@ import wordmarkLightSrc from "../img/brand/wordmark-light.webp";
 import wordmarkDarkSrc from "../img/brand/wordmark-dark.webp";
 import iconLightSrc from "../img/brand/icon-light.webp";
 import iconDarkSrc from "../img/brand/icon-dark.webp";
+import { appendSvg } from "./icons";
 
 /** Brand red from the logo. Mirrored in styles.css as --it-brand-red. */
 export const BRAND_RED = "#E12D2D";
@@ -77,7 +78,7 @@ export function renderBuyLicenseLink(
     },
   });
   const spark = pill.createSpan({ cls: "it-buy-pill-spark" });
-  spark.innerHTML = SPARK_SVG;
+  appendSvg(spark, SPARK_SVG);
   pill.createSpan({ cls: "it-buy-pill-label", text: t("buy.cta") });
   return pill;
 }

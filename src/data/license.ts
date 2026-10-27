@@ -23,7 +23,6 @@ const VENDOR_PUBLIC_KEY = "acd7f01db5213ca05b2d5d8e6ee52675a31afec5e680fdb24dced
 // folds the comparison away. Test bundles without the define read `undefined`,
 // which is falsy.
 declare global {
-  // eslint-disable-next-line no-var
   var __IT_WEB__: boolean | undefined;
 }
 

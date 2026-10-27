@@ -163,7 +163,7 @@ function hasFilterConditions(group: CalendarSyncRule["filter"]): boolean {
   if (!group?.conditions?.length) return false;
   return group.conditions.some((condition) => {
     const nested = condition as CalendarSyncRule["filter"];
-    return !!nested?.logic ? hasFilterConditions(nested) : true;
+    return nested?.logic ? hasFilterConditions(nested) : true;
   });
 }
 

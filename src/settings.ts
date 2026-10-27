@@ -6,7 +6,7 @@ import { PersistedViewState } from "./view-state";
 import { VIEW_COLOR_SCHEMES, ViewColorSet, WEBSITE_URL, resolveViewColorSet } from "./constants";
 import { HOTKEY_ACTIONS, COMMON_OBSIDIAN_COMBOS, comboFromEvent, resolveHotkeys, formatCombo } from "./hotkeys";
 import { openIconPicker } from "./ui/pickers";
-import { renderIconish } from "./ui/icons";
+import { renderIconish, appendSvg } from "./ui/icons";
 import { renderLogo, SPARK_SVG } from "./ui/logo";
 import { ExportModal } from "./modals/export-modal";
 import { ImportModal } from "./modals/import-modal";
@@ -334,7 +334,7 @@ export class InventTasksSettingTab extends PluginSettingTab {
     this.renderActivation(containerEl);
     this.renderHealthDiagnostics(containerEl);
 
-    containerEl.createEl("h2", { text: t("settings.title") });
+    new Setting(containerEl).setName(t("settings.title")).setHeading();
     containerEl.createEl("p", {
       text: t("settings.intro"),
       cls: "setting-item-description",
@@ -942,8 +942,11 @@ export class InventTasksSettingTab extends PluginSettingTab {
         await this.setHotkey(id, combo);
         render();
       };
-      cleanup = () => document.removeEventListener("keydown", onKey, true);
-      document.addEventListener("keydown", onKey, true);
+      // Keys arrive in the settings window, which is its own window since
+      // Obsidian 1.14 — listen there, not on the main window's document.
+      const keyDoc = wrap.ownerDocument;
+      cleanup = () => keyDoc.removeEventListener("keydown", onKey, true);
+      keyDoc.addEventListener("keydown", onKey, true);
     };
 
     const render = () => {
@@ -1598,7 +1601,7 @@ export class InventTasksSettingTab extends PluginSettingTab {
       mark.setText("✓");
       head.createDiv({ cls: "it-activation-title", text: t("license.active", { email: acct?.id || "" }) });
     } else {
-      mark.innerHTML = SPARK_SVG;
+      appendSvg(mark, SPARK_SVG);
       const titles = head.createDiv({ cls: "it-activation-titles" });
       titles.createDiv({ cls: "it-activation-title", text: t("license.inactiveTitle") });
       const sub = titles.createDiv({ cls: "it-activation-sub" });
@@ -1671,10 +1674,8 @@ export class InventTasksSettingTab extends PluginSettingTab {
     // when active it offers Pro for a *different* email (a separate license).
     const pro = actions.createEl("button", { cls: active ? "it-pro-btn is-subtle is-blue" : "it-pro-btn" });
     paintBtn(pro, active ? "outline" : "red");
-    pro.style.setProperty("display", "inline-flex", "important");
-    pro.style.setProperty("align-items", "center", "important");
-    pro.style.setProperty("gap", "7px", "important");
-    pro.createSpan({ cls: "it-pro-btn-spark" }).innerHTML = SPARK_SVG;
+    pro.addClass("it-pro-btn-row");
+    appendSvg(pro.createSpan({ cls: "it-pro-btn-spark" }), SPARK_SVG);
     pro.createSpan({ text: active ? t("license.buyAnother") : t("license.buy") });
     pro.addEventListener("click", () => window.open(WEBSITE_URL));
 
@@ -1767,7 +1768,7 @@ export class InventTasksSettingTab extends PluginSettingTab {
 
     const addList = (title: string, items: string[] | undefined) => {
       if (!items?.length) return;
-      containerEl.createEl("h3", { text: title });
+      new Setting(containerEl).setName(title).setHeading();
       const list = containerEl.createEl("ul", { cls: "it-health-list" });
       for (const item of items.slice(0, 20)) list.createEl("li", { text: item });
       if (items.length > 20) list.createEl("li", { text: t("health.moreItems", { count: items.length - 20 }) });
@@ -1825,7 +1826,7 @@ export class InventTasksSettingTab extends PluginSettingTab {
     }
 
     // ---- Channels (per workspace; accounts are global, configured below) ----
-    containerEl.createEl("h3", { text: t("extNotif.channels.title") });
+    new Setting(containerEl).setName(t("extNotif.channels.title")).setHeading();
     containerEl.createEl("p", { text: t("extNotif.channels.desc"), cls: "setting-item-description" });
     containerEl.createEl("p", { text: t("extNotif.mergeNote"), cls: "setting-item-description" });
 
@@ -1871,7 +1872,7 @@ export class InventTasksSettingTab extends PluginSettingTab {
     }
 
     // ---- Triggers ----
-    containerEl.createEl("h3", { text: t("extNotif.triggers.title") });
+    new Setting(containerEl).setName(t("extNotif.triggers.title")).setHeading();
     containerEl.createEl("p", { text: t("extNotif.triggers.priorityNote"), cls: "setting-item-description" });
 
     const chanOpts: Array<{ id: NotifChannel; label: string }> = [
@@ -2037,11 +2038,8 @@ export class InventTasksSettingTab extends PluginSettingTab {
   // one numbered step per non-empty line.
   private renderSetupGuide(containerEl: HTMLElement, title: string, steps: string): void {
     const details = containerEl.createEl("details", { cls: "it-setup-guide" });
-    details.style.cssText = "margin:4px 0 14px;border:1px solid var(--background-modifier-border);border-radius:8px;padding:6px 12px;background:var(--background-secondary);";
     const summary = details.createEl("summary", { text: title });
-    summary.style.cssText = "cursor:pointer;font-weight:600;padding:4px 0;";
     const list = details.createEl("ol");
-    list.style.cssText = "margin:8px 0 4px;padding-left:20px;line-height:1.6;font-size:13px;";
     for (const raw of steps.split("\n")) {
       const line = raw.trim();
       if (line) list.createEl("li", { text: line });
@@ -2110,7 +2108,7 @@ export class InventTasksSettingTab extends PluginSettingTab {
     if (!cal.enabled) return;
 
     // ---- Scope ----
-    containerEl.createEl("h3", { text: t("calSync.scope.title") });
+    new Setting(containerEl).setName(t("calSync.scope.title")).setHeading();
 
     new Setting(containerEl)
       .setName(t("calSync.scope.dueDateOnly"))
@@ -2153,7 +2151,7 @@ export class InventTasksSettingTab extends PluginSettingTab {
       .addText((inp) => {
         inp.inputEl.type = "number";
         inp.inputEl.min = "0";
-        inp.inputEl.style.width = "90px";
+        inp.inputEl.addClass("it-input-90");
         inp.setPlaceholder(t("calSync.scope.unlimited")).setValue(cal.scope.pastDays ? String(cal.scope.pastDays) : "");
         inp.onChange(async (v) => {
           const n = parseInt(v, 10);
@@ -2167,7 +2165,7 @@ export class InventTasksSettingTab extends PluginSettingTab {
       .addText((inp) => {
         inp.inputEl.type = "number";
         inp.inputEl.min = "0";
-        inp.inputEl.style.width = "90px";
+        inp.inputEl.addClass("it-input-90");
         inp.setPlaceholder(t("calSync.scope.unlimited")).setValue(cal.scope.futureDays ? String(cal.scope.futureDays) : "");
         inp.onChange(async (v) => {
           const n = parseInt(v, 10);
@@ -2228,7 +2226,7 @@ export class InventTasksSettingTab extends PluginSettingTab {
     }
 
     // ---- ICS File ----
-    containerEl.createEl("h3", { text: t("calSync.ics.title") });
+    new Setting(containerEl).setName(t("calSync.ics.title")).setHeading();
     containerEl.createEl("p", { text: t("calSync.ics.desc"), cls: "setting-item-description" });
 
     new Setting(containerEl)
@@ -2251,7 +2249,7 @@ export class InventTasksSettingTab extends PluginSettingTab {
       );
 
     // ---- CalDAV ----
-    containerEl.createEl("h3", { text: t("calSync.caldav.title") });
+    new Setting(containerEl).setName(t("calSync.caldav.title")).setHeading();
     containerEl.createEl("p", { text: t("calSync.caldav.desc"), cls: "setting-item-description" });
 
     new Setting(containerEl)
@@ -2311,7 +2309,6 @@ export class InventTasksSettingTab extends PluginSettingTab {
       const noteText = t(noteKey);
       if (noteText && !noteText.startsWith("calSync.caldav.note.")) {
         const noteEl = containerEl.createDiv({ cls: "setting-item-description inventtasks-caldav-note" });
-        noteEl.style.cssText = "white-space: pre-line; padding: 8px 12px; border-left: 3px solid var(--interactive-accent); margin: 4px 0 12px; background: var(--background-secondary);";
         noteEl.setText(noteText);
       }
 

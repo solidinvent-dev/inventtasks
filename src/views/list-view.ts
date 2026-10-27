@@ -797,8 +797,6 @@ export function renderListView(opts: RenderOpts) {
 
   if (next < items.length) {
     const sentinel = grid.createDiv({ cls: "it-list-sentinel" });
-    sentinel.style.gridColumn = "1 / -1";
-    sentinel.style.height = "1px";
     const io = new IntersectionObserver((entries) => {
       if (!entries.some((e) => e.isIntersecting)) return;
       renderChunk(60);
@@ -864,10 +862,7 @@ function renderGroupHeader(grid: HTMLElement, bucket: GroupBucket, opts: RenderO
 }
 
 function renderColumnHeader(grid: HTMLElement, opts: RenderOpts, cols: string[]) {
-  const head = grid.createDiv({ cls: "it-list-col-header" });
-  head.style.gridColumn = "1 / -1";
-  head.style.display = "grid";
-  head.style.gridTemplateColumns = "subgrid" as any;
+  const head = grid.createDiv({ cls: "it-list-col-header it-subgrid-row" });
 
   const customFields = ((opts.context as any).customFields as CustomFieldDef[]) || [];
   const cfFor = (field: string): CustomFieldDef | undefined =>
@@ -900,9 +895,7 @@ function renderSummaryRow(grid: HTMLElement, opts: RenderOpts, cols: string[], t
   const { plugin, context, state } = opts;
   const calcs = state.columnCalcs?.list || {};
   const row = grid.createDiv({ cls: "it-list-summary" + (mode === "grand" ? " is-grand" : " is-group") });
-  row.style.gridColumn = "1 / -1";
-  row.style.display = "grid";
-  row.style.gridTemplateColumns = "subgrid" as any;
+  row.addClass("it-subgrid-row");
 
   const customFields = ((context as any).customFields as Array<{ id: string; name: string }>) || [];
   const fieldLabels = (context as any).fieldLabels as Record<string, string> | undefined;
@@ -959,7 +952,7 @@ function renderRow(parent: HTMLElement, nrow: NestedRow, opts: RenderOpts, cols:
   // ---- Leading cluster: checkbox ----
   if (isVisible(opts, "checkbox")) {
     const checkbox = row.createEl("input", { type: "checkbox", cls: "it-row-check" });
-    checkbox.style.gridColumn = "check";
+    checkbox.addClass("it-gc-check");
     checkbox.checked = isDone;
     checkbox.addEventListener("mousedown", (e) => {
       e.stopPropagation();
@@ -987,14 +980,14 @@ function renderRow(parent: HTMLElement, nrow: NestedRow, opts: RenderOpts, cols:
     const types = plugin.index.resolveTaskTypes({ listPath: t.listPath });
     const ttype = types.find((x) => x.id === t.data.type);
     const wrap = row.createSpan({ cls: "it-row-type" });
-    wrap.style.gridColumn = "type";
+    wrap.addClass("it-gc-type");
     const typeIconEl = renderIconish(wrap, ttype?.icon || typeEmoji(t.data.type), { cls: "it-row-type-icon" });
     if (ttype?.color && typeIconEl) typeIconEl.style.color = ttype.color;
   }
 
   // ---- Title (always shown) + id/custom_id prefix + count badges ----
   const title = row.createDiv({ cls: "it-row-title" });
-  title.style.gridColumn = "title";
+  title.addClass("it-gc-title");
   // Subtask presentation: indent by depth (nested mode); a chevron collapses a
   // parent's children; a twig "↳" marks any subtask row so it's identifiable in
   // every mode (in flat mode subtasks are depth 0 but still get the marker).
@@ -1061,7 +1054,7 @@ function renderRow(parent: HTMLElement, nrow: NestedRow, opts: RenderOpts, cols:
 
   // ---- Actions ----
   const actions = row.createDiv({ cls: "it-row-actions" });
-  actions.style.gridColumn = "actions";
+  actions.addClass("it-gc-actions");
   const more = actions.createEl("button", { cls: "it-icon-btn it-icon-btn-mini", attr: { "aria-label": tr("common.more") } });
   setIcon(more, "more-horizontal");
   more.addEventListener("click", (e) => {

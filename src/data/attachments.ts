@@ -47,6 +47,7 @@ function relativeFor(bucket: string, filename: string): string {
 function safeFilename(value: string): string {
   const cleaned = String(value || "")
     .trim()
+    // eslint-disable-next-line no-control-regex -- control characters are exactly what a filename must not contain
     .replace(/[\\/:*?"<>|\u0000-\u001f]/g, "-")
     .replace(/[. ]+$/g, "")
     .trim();

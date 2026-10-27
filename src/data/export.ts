@@ -20,6 +20,7 @@ import { effectiveCustomFieldValue } from "./custom-fields";
 import { resolveAttachmentVaultPath, resolveCoverUrl } from "./attachments";
 import { getBlocks, getWaitingOn, getRelated } from "./relationships";
 import { parentTaskIds } from "../types";
+import { scalarText } from "../utils/text";
 
 export type ExportScope = "workspace" | "space" | "folder" | "list" | "task" | "view";
 export type ReadableFormat = "csv" | "xlsx" | "markdown" | "html" | "json";
@@ -451,7 +452,7 @@ function zipStored(files: Array<{ name: string; data: string }>): Uint8Array {
 }
 
 function xmlEsc(value: unknown): string {
-  return Array.from(String(value ?? ""))
+  return Array.from(scalarText(value))
     .filter((char) => {
       const code = char.codePointAt(0)!;
       return code === 9 || code === 10 || code === 13 || (code >= 0x20 && code <= 0xd7ff)
@@ -571,8 +572,8 @@ function htmlEsc(s: string): string {
 }
 
 function sanitizeHtmlFragment(html: string): string {
-  const tpl = document.createElement("template");
-  tpl.innerHTML = html;
+  // Parsed into an inert document: nothing in it runs or loads.
+  const root = new DOMParser().parseFromString(`<body>${html}</body>`, "text/html").body;
   const blocked = new Set(["script", "style", "iframe", "object", "embed", "link", "meta", "base", "form", "input", "textarea", "select", "button", "svg", "math"]);
   const urlAttrs = new Set(["href", "src", "xlink:href"]);
   const isSafeUrl = (value: string) => {
@@ -581,7 +582,7 @@ function sanitizeHtmlFragment(html: string): string {
       || /^(https?:|mailto:|app:|obsidian:)/.test(v)
       || /^data:image\/(png|jpe?g|gif|webp|bmp|avif);/i.test(value.trim());
   };
-  for (const el of Array.from(tpl.content.querySelectorAll("*"))) {
+  for (const el of Array.from(root.querySelectorAll("*"))) {
     const tag = el.tagName.toLowerCase();
     if (blocked.has(tag)) {
       el.remove();
@@ -598,7 +599,7 @@ function sanitizeHtmlFragment(html: string): string {
       }
     }
   }
-  return tpl.innerHTML;
+  return root.innerHTML;
 }
 
 // Shared HTML chrome. `printButton` controls the toolbar (the print/PDF button
@@ -832,12 +833,7 @@ export function downloadFile(filename: string, content: BlobPart, mime: string) 
 // hidden iframe so only this content prints, not the Obsidian window.
 export function printHtml(html: string) {
   const iframe = document.createElement("iframe");
-  iframe.style.position = "fixed";
-  iframe.style.right = "0";
-  iframe.style.bottom = "0";
-  iframe.style.width = "0";
-  iframe.style.height = "0";
-  iframe.style.border = "0";
+  iframe.addClass("it-print-frame");
   document.body.appendChild(iframe);
   const doc = iframe.contentWindow?.document;
   if (!doc) { iframe.remove(); return; }
@@ -860,7 +856,7 @@ export type ImageMode = "embed" | "folder";
 function blobToDataUri(blob: Blob): Promise<string> {
   return new Promise((resolve, reject) => {
     const r = new FileReader();
-    r.onload = () => resolve(String(r.result));
+    r.onload = () => resolve(typeof r.result === "string" ? r.result : "");
     r.onerror = reject;
     r.readAsDataURL(blob);
   });
@@ -937,7 +933,7 @@ async function exportMarkdownFolder(plugin: InventTasksPlugin, tf: TaskFile, md:
     if (copied.has(file.path)) return copied.get(file.path)!;
     try {
       const buf = await app.vault.adapter.readBinary(file.path);
-      const safe = `${++i}-${file.name}`.replace(/[^a-zA-Z0-9_.\-]/g, "_");
+      const safe = `${++i}-${file.name}`.replace(/[^a-zA-Z0-9_.-]/g, "_");
       await app.vault.adapter.writeBinary(`${imagesDir}/${safe}`, buf);
       const rel = `images/${safe}`;
       copied.set(file.path, rel);
@@ -947,7 +943,7 @@ async function exportMarkdownFolder(plugin: InventTasksPlugin, tf: TaskFile, md:
 
   let out = md;
   // Wiki embeds: ![[name|...]]
-  const wiki = [...md.matchAll(/!\[\[([^\]\|]+)(?:\|[^\]]*)?\]\]/g)];
+  const wiki = [...md.matchAll(/!\[\[([^\]|]+)(?:\|[^\]]*)?\]\]/g)];
   for (const w of wiki) {
     const file = app.metadataCache.getFirstLinkpathDest(w[1].trim(), tf.filePath || "");
     if (file) { const rel = await copyVaultFile(file); if (rel) out = out.split(w[0]).join(`![](${rel})`); }

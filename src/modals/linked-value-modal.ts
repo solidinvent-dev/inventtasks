@@ -167,7 +167,7 @@ export class LocationModal extends Modal {
 
     // "Extract from URL" button
     const extractBtn = urlWrap.createEl("button", { cls: "it-btn-ghost", text: t("linked.extractCoords") });
-    extractBtn.style.marginTop = "4px";
+    extractBtn.addClass("it-mt-4");
     extractBtn.addEventListener("click", () => {
       const coords = extractCoordsFromUrl(this.url.trim());
       if (coords) {

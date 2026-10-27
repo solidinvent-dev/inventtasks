@@ -449,12 +449,8 @@ function measureRailFitWidth(railHead: HTMLElement, railContent: HTMLElement): n
   let width = 0;
   for (const source of [railHead, ...Array.from(railContent.children)] as HTMLElement[]) {
     const clone = source.cloneNode(true) as HTMLElement;
-    clone.style.position = "static";
-    clone.style.left = "";
-    clone.style.right = "";
-    clone.style.top = "";
-    clone.style.width = "max-content";
-    clone.style.maxWidth = "none";
+    for (const prop of ["position", "left", "right", "top", "width", "max-width"]) clone.style.removeProperty(prop);
+    clone.addClass("it-tg-measure-clone");
     measure.appendChild(clone);
     width = Math.max(width, clone.scrollWidth, Math.ceil(clone.getBoundingClientRect().width));
   }

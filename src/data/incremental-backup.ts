@@ -4,6 +4,7 @@ import type { WorkspaceEntry } from "../settings";
 import { splitFrontmatter } from "./parsers";
 import { t } from "../i18n";
 import { sha256Hex } from "../sync/util";
+import { scalarText } from "../utils/text";
 
 export type BackupLocationMode = "plugin" | "vault";
 export type BackupBodyMode = "auto" | "always" | "never";
@@ -55,7 +56,7 @@ function withoutCustomPath(partial?: Partial<IncrementalBackupSettings>): Partia
 }
 
 function clampNumber(value: unknown, min: number, max: number, fallback: number): number {
-  const n = typeof value === "number" ? value : parseInt(String(value ?? ""), 10);
+  const n = typeof value === "number" ? value : parseInt(scalarText(value), 10);
   return Number.isFinite(n) ? Math.max(min, Math.min(max, n)) : fallback;
 }
 

@@ -119,12 +119,11 @@ export function openColorPicker(
     nativeBtn.addEventListener("click", (e) => {
       e.preventDefault();
       e.stopPropagation();
-      const inp = document.createElement("input");
+      const inp = nativeBtn.ownerDocument.createElement("input");
       inp.type = "color";
       inp.value = isHex(current) ? current! : "#9E9E9E";
-      inp.style.position = "fixed";
-      inp.style.opacity = "0";
-      document.body.appendChild(inp);
+      inp.className = "it-hidden-color-input";
+      nativeBtn.ownerDocument.body.appendChild(inp);
       inp.addEventListener("change", () => {
         onPick(inp.value);
         inp.remove();
@@ -254,7 +253,7 @@ export function openIconPicker(
         // Auto-switch into "all" mode the moment the user starts searching —
         // gives them the full catalogue without an extra click.
         if (v && mode === "quick") mode = "all";
-        renderGrid();
+        void renderGrid();
       });
 
       // Container that gets re-rendered when query/category changes (without
@@ -288,19 +287,19 @@ export function openIconPicker(
           loadingEl.remove();
           renderEmojiAll(gridHost, mod, query, activeCategory, (cat) => {
             activeCategory = cat;
-            renderGrid();
+            void renderGrid();
           }, current, onPick, resultCells);
         } else {
           const mod = await loadFullLucide();
           loadingEl.remove();
           renderLucideAll(gridHost, mod, query, activeCategory, (cat) => {
             activeCategory = cat;
-            renderGrid();
+            void renderGrid();
           }, current, onPick, resultCells);
         }
       };
 
-      renderGrid();
+      void renderGrid();
       // Focus the input on every re-render so the user can keep typing.
       // Defer so it runs after the popover has been positioned.
       setTimeout(() => {
@@ -436,7 +435,10 @@ function renderLucideAll(
 }
 
 function closePopover() {
-  document.querySelectorAll(".it-popover").forEach((el) => el.remove());
+  // Popovers open in whichever window holds their trigger (see showPopover).
+  for (const doc of new Set([document, activeDocument])) {
+    doc.querySelectorAll(".it-popover").forEach((el) => el.remove());
+  }
 }
 
 // ============================================================================

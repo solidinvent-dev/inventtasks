@@ -25,35 +25,40 @@ export function showContextMenu(e: MouseEvent, items: MenuItem[]): void {
   e.stopPropagation();
   e.preventDefault();
 
-  const menu = document.createElement("div");
+  // The window the click happened in: Obsidian 1.14 renders settings in their
+  // own window, and views can be popped out, so `document` is not always it.
+  const doc = (e.target as Node | null)?.ownerDocument ?? activeDocument;
+  const win = doc.defaultView ?? window;
+
+  const menu = doc.createElement("div");
   menu.className = "it-popover it-ctx-menu";
   menu.setAttribute("role", "menu");
 
-  const list = document.createElement("div");
+  const list = doc.createElement("div");
   list.className = "it-popover-menu";
   menu.appendChild(list);
 
   for (const item of items) {
     if (item === "separator") {
-      const sep = document.createElement("div");
+      const sep = doc.createElement("div");
       sep.className = "it-popover-sep";
       list.appendChild(sep);
       continue;
     }
 
-    const btn = document.createElement("button");
+    const btn = doc.createElement("button");
     btn.className = "it-popover-item" + (item.danger ? " it-ctx-item-danger" : "");
     btn.setAttribute("role", "menuitem");
     btn.setAttribute("type", "button");
 
     if (item.icon) {
-      const iconWrap = document.createElement("span");
+      const iconWrap = doc.createElement("span");
       iconWrap.className = "it-popover-icon";
       setIcon(iconWrap, item.icon);
       btn.appendChild(iconWrap);
     }
 
-    const labelSpan = document.createElement("span");
+    const labelSpan = doc.createElement("span");
     labelSpan.textContent = item.label;
     btn.appendChild(labelSpan);
 
@@ -69,19 +74,16 @@ export function showContextMenu(e: MouseEvent, items: MenuItem[]): void {
   }
 
   // Measure and position after appending to body
-  menu.style.position = "fixed";
-  menu.style.zIndex = "10000";
-  menu.style.visibility = "hidden";
-  document.body.appendChild(menu);
+  menu.addClass("it-measuring"); // laid out but invisible until positioned
+  doc.body.appendChild(menu);
   activeMenu = menu;
 
-  const vw = window.innerWidth;
+  const vw = win.innerWidth;
   // On mobile, exclude the area behind Obsidian's bottom navbar so the menu and
   // its lowest items stay on-screen and tappable.
-  const vh = window.innerHeight - mobileBottomInset();
+  const vh = win.innerHeight - mobileBottomInset(doc);
   // Cap height so a long menu stays on-screen and scrolls instead of running off.
   menu.style.maxHeight = `${vh - 16}px`;
-  menu.style.overflowY = "auto";
   const mw = menu.offsetWidth;
   const mh = menu.offsetHeight;
 
@@ -94,7 +96,7 @@ export function showContextMenu(e: MouseEvent, items: MenuItem[]): void {
 
   menu.style.left = `${x}px`;
   menu.style.top = `${y}px`;
-  menu.style.visibility = "";
+  menu.removeClass("it-measuring");
 
   // Close on outside click or Escape
   const onOutside = (ev: MouseEvent) => {
@@ -106,13 +108,13 @@ export function showContextMenu(e: MouseEvent, items: MenuItem[]): void {
 
   // Defer so the current click doesn't immediately dismiss
   window.setTimeout(() => {
-    document.addEventListener("mousedown", onOutside, { capture: true });
-    document.addEventListener("keydown", onEscape, { capture: true });
+    doc.addEventListener("mousedown", onOutside, { capture: true });
+    doc.addEventListener("keydown", onEscape, { capture: true });
   }, 0);
 
   (menu as any)._cleanup = () => {
-    document.removeEventListener("mousedown", onOutside, { capture: true });
-    document.removeEventListener("keydown", onEscape, { capture: true });
+    doc.removeEventListener("mousedown", onOutside, { capture: true });
+    doc.removeEventListener("keydown", onEscape, { capture: true });
   };
 }
 
