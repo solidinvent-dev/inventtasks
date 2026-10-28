@@ -26,6 +26,12 @@ Building from source: `npm ci && npm run build` produces `main.js`.
 
 ## Install
 
+### From Obsidian
+
+InventTasks is in Obsidian's [community directory](https://community.obsidian.md/plugins/inventtasks):
+Settings → Community plugins → **Browse**, search for **InventTasks**, then
+**Install** and **Enable**. Updates come the same way as for any other plugin.
+
 ### Manual
 
 1. Download `inventtasks.zip` from the [latest release](https://github.com/solidinvent-dev/inventtasks/releases/latest).
