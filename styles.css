@@ -1,3 +1,10 @@
+/*
+ * Precedence without !important: where a rule must win over Obsidian's own
+ * styles or a theme's (button fills, borders and shadows above all), its
+ * selector ends in `:not(#\#)`. That matches every element and adds one ID to
+ * the specificity, which beats any class-based rule. Only those declarations
+ * are boosted; the rest of the rule keeps its normal precedence.
+ */
 /* =================================================================
    InventTasks — task management styles
    Design system tokens (see DESIGN.md) layered over Obsidian variables
@@ -89,25 +96,25 @@
 }
 
 /* ----- Override Obsidian default button hover effects (transform / box-shadow) ----- */
-.inventtasks-root button,
-.it-popover button,
-.it-task-modal button,
-.it-config-modal button {
-  transform: none !important;
+.inventtasks-root button:not(#\#),
+.it-popover button:not(#\#),
+.it-task-modal button:not(#\#),
+.it-config-modal button:not(#\#) {
+  transform: none;
 }
-.inventtasks-root button:hover,
-.inventtasks-root button:focus,
-.inventtasks-root button:active,
-.it-popover button:hover,
-.it-popover button:focus,
-.it-popover button:active,
-.it-task-modal button:hover,
-.it-task-modal button:focus,
-.it-task-modal button:active,
-.it-config-modal button:hover,
-.it-config-modal button:focus,
-.it-config-modal button:active {
-  transform: none !important;
+.inventtasks-root button:hover:not(#\#),
+.inventtasks-root button:focus:not(#\#),
+.inventtasks-root button:active:not(#\#),
+.it-popover button:hover:not(#\#),
+.it-popover button:focus:not(#\#),
+.it-popover button:active:not(#\#),
+.it-task-modal button:hover:not(#\#),
+.it-task-modal button:focus:not(#\#),
+.it-task-modal button:active:not(#\#),
+.it-config-modal button:hover:not(#\#),
+.it-config-modal button:focus:not(#\#),
+.it-config-modal button:active:not(#\#) {
+  transform: none;
 }
 /* Kill outer glow on our buttons so hover doesn't "grow" them */
 .inventtasks-root .it-icon-btn,
@@ -143,8 +150,8 @@
   box-shadow: none;
 }
 /* Kill Obsidian's default transform/box-shadow on docked sidebar buttons */
-.inventtasks-sidebar-leaf button {
-  transform: none !important;
+.inventtasks-sidebar-leaf button:not(#\#) {
+  transform: none;
 }
 
 /* ----- Flat icon controls (global) -----
@@ -166,82 +173,102 @@
 .it-tpl-modal .it-icon-btn,
 .it-tpl-manager .it-icon-btn,
 .it-activity-modal .it-icon-btn {
-  background: transparent !important;
-  box-shadow: none !important;
-  border: none !important;
   min-height: 0;
   line-height: 1;
 }
-.inventtasks-root .it-icon-btn:hover,
-.inventtasks-root .it-icon-btn:focus,
-.inventtasks-root .it-icon-btn:active,
-.inventtasks-sidebar-leaf .it-icon-btn:hover,
-.inventtasks-sidebar-leaf .it-icon-btn:focus,
-.inventtasks-sidebar-leaf .it-icon-btn:active,
-.it-popover .it-icon-btn:hover,
-.it-popover .it-icon-btn:focus,
-.it-popover .it-icon-btn:active,
-.modal .it-icon-btn:hover,
-.modal .it-icon-btn:focus,
-.modal .it-icon-btn:active,
-.setting-item .it-icon-btn:hover,
-.setting-item .it-icon-btn:focus,
-.setting-item .it-icon-btn:active,
-.it-task-modal .it-icon-btn:hover,
-.it-task-modal .it-icon-btn:focus,
-.it-task-modal .it-icon-btn:active,
-.it-config-modal .it-icon-btn:hover,
-.it-config-modal .it-icon-btn:focus,
-.it-config-modal .it-icon-btn:active,
-.it-filter-modal .it-icon-btn:hover,
-.it-filter-modal .it-icon-btn:focus,
-.it-filter-modal .it-icon-btn:active,
-.it-export-modal .it-icon-btn:hover,
-.it-export-modal .it-icon-btn:focus,
-.it-export-modal .it-icon-btn:active,
-.it-import-modal .it-icon-btn:hover,
-.it-import-modal .it-icon-btn:focus,
-.it-import-modal .it-icon-btn:active,
-.it-trash-modal .it-icon-btn:hover,
-.it-trash-modal .it-icon-btn:focus,
-.it-trash-modal .it-icon-btn:active,
-.it-cal-day-modal .it-icon-btn:hover,
-.it-cal-day-modal .it-icon-btn:focus,
-.it-cal-day-modal .it-icon-btn:active,
-.it-tpl-modal .it-icon-btn:hover,
-.it-tpl-modal .it-icon-btn:focus,
-.it-tpl-modal .it-icon-btn:active,
-.it-tpl-manager .it-icon-btn:hover,
-.it-tpl-manager .it-icon-btn:focus,
-.it-tpl-manager .it-icon-btn:active,
-.it-activity-modal .it-icon-btn:hover,
-.it-activity-modal .it-icon-btn:focus,
-.it-activity-modal .it-icon-btn:active {
-  background: transparent !important;
-  box-shadow: none !important;
-  border: none !important;
-  outline: none !important;
+.inventtasks-root .it-icon-btn:not(#\#),
+.inventtasks-sidebar-leaf .it-icon-btn:not(#\#),
+.it-popover .it-icon-btn:not(#\#),
+.modal .it-icon-btn:not(#\#),
+.setting-item .it-icon-btn:not(#\#),
+.it-task-modal .it-icon-btn:not(#\#),
+.it-config-modal .it-icon-btn:not(#\#),
+.it-filter-modal .it-icon-btn:not(#\#),
+.it-export-modal .it-icon-btn:not(#\#),
+.it-import-modal .it-icon-btn:not(#\#),
+.it-trash-modal .it-icon-btn:not(#\#),
+.it-cal-day-modal .it-icon-btn:not(#\#),
+.it-tpl-modal .it-icon-btn:not(#\#),
+.it-tpl-manager .it-icon-btn:not(#\#),
+.it-activity-modal .it-icon-btn:not(#\#) {
+  background: transparent;
+  box-shadow: none;
+  border: none;
+}
+.inventtasks-root .it-icon-btn:hover:not(#\#),
+.inventtasks-root .it-icon-btn:focus:not(#\#),
+.inventtasks-root .it-icon-btn:active:not(#\#),
+.inventtasks-sidebar-leaf .it-icon-btn:hover:not(#\#),
+.inventtasks-sidebar-leaf .it-icon-btn:focus:not(#\#),
+.inventtasks-sidebar-leaf .it-icon-btn:active:not(#\#),
+.it-popover .it-icon-btn:hover:not(#\#),
+.it-popover .it-icon-btn:focus:not(#\#),
+.it-popover .it-icon-btn:active:not(#\#),
+.modal .it-icon-btn:hover:not(#\#),
+.modal .it-icon-btn:focus:not(#\#),
+.modal .it-icon-btn:active:not(#\#),
+.setting-item .it-icon-btn:hover:not(#\#),
+.setting-item .it-icon-btn:focus:not(#\#),
+.setting-item .it-icon-btn:active:not(#\#),
+.it-task-modal .it-icon-btn:hover:not(#\#),
+.it-task-modal .it-icon-btn:focus:not(#\#),
+.it-task-modal .it-icon-btn:active:not(#\#),
+.it-config-modal .it-icon-btn:hover:not(#\#),
+.it-config-modal .it-icon-btn:focus:not(#\#),
+.it-config-modal .it-icon-btn:active:not(#\#),
+.it-filter-modal .it-icon-btn:hover:not(#\#),
+.it-filter-modal .it-icon-btn:focus:not(#\#),
+.it-filter-modal .it-icon-btn:active:not(#\#),
+.it-export-modal .it-icon-btn:hover:not(#\#),
+.it-export-modal .it-icon-btn:focus:not(#\#),
+.it-export-modal .it-icon-btn:active:not(#\#),
+.it-import-modal .it-icon-btn:hover:not(#\#),
+.it-import-modal .it-icon-btn:focus:not(#\#),
+.it-import-modal .it-icon-btn:active:not(#\#),
+.it-trash-modal .it-icon-btn:hover:not(#\#),
+.it-trash-modal .it-icon-btn:focus:not(#\#),
+.it-trash-modal .it-icon-btn:active:not(#\#),
+.it-cal-day-modal .it-icon-btn:hover:not(#\#),
+.it-cal-day-modal .it-icon-btn:focus:not(#\#),
+.it-cal-day-modal .it-icon-btn:active:not(#\#),
+.it-tpl-modal .it-icon-btn:hover:not(#\#),
+.it-tpl-modal .it-icon-btn:focus:not(#\#),
+.it-tpl-modal .it-icon-btn:active:not(#\#),
+.it-tpl-manager .it-icon-btn:hover:not(#\#),
+.it-tpl-manager .it-icon-btn:focus:not(#\#),
+.it-tpl-manager .it-icon-btn:active:not(#\#),
+.it-activity-modal .it-icon-btn:hover:not(#\#),
+.it-activity-modal .it-icon-btn:focus:not(#\#),
+.it-activity-modal .it-icon-btn:active:not(#\#) {
+  background: transparent;
+  box-shadow: none;
+  border: none;
+  outline: none;
 }
 /* Tree expand chevrons — same flat treatment (scoped under the row for specificity). */
 .inventtasks-root .it-tree-row .it-tree-expand,
 .inventtasks-sidebar-leaf .it-tree-row .it-tree-expand,
 .it-sidebar-wrap .it-tree-row .it-tree-expand {
-  background: transparent !important;
-  box-shadow: none !important;
-  border: none !important;
   min-height: 0;
 }
-.inventtasks-root .it-tree-row .it-tree-expand:hover,
-.inventtasks-root .it-tree-row .it-tree-expand:focus,
-.inventtasks-root .it-tree-row .it-tree-expand:active,
-.inventtasks-sidebar-leaf .it-tree-row .it-tree-expand:hover,
-.inventtasks-sidebar-leaf .it-tree-row .it-tree-expand:focus,
-.inventtasks-sidebar-leaf .it-tree-row .it-tree-expand:active,
-.it-sidebar-wrap .it-tree-row .it-tree-expand:hover,
-.it-sidebar-wrap .it-tree-row .it-tree-expand:focus,
-.it-sidebar-wrap .it-tree-row .it-tree-expand:active {
-  background: transparent !important;
-  box-shadow: none !important;
+.inventtasks-root .it-tree-row .it-tree-expand:not(#\#),
+.inventtasks-sidebar-leaf .it-tree-row .it-tree-expand:not(#\#),
+.it-sidebar-wrap .it-tree-row .it-tree-expand:not(#\#) {
+  background: transparent;
+  box-shadow: none;
+  border: none;
+}
+.inventtasks-root .it-tree-row .it-tree-expand:hover:not(#\#),
+.inventtasks-root .it-tree-row .it-tree-expand:focus:not(#\#),
+.inventtasks-root .it-tree-row .it-tree-expand:active:not(#\#),
+.inventtasks-sidebar-leaf .it-tree-row .it-tree-expand:hover:not(#\#),
+.inventtasks-sidebar-leaf .it-tree-row .it-tree-expand:focus:not(#\#),
+.inventtasks-sidebar-leaf .it-tree-row .it-tree-expand:active:not(#\#),
+.it-sidebar-wrap .it-tree-row .it-tree-expand:hover:not(#\#),
+.it-sidebar-wrap .it-tree-row .it-tree-expand:focus:not(#\#),
+.it-sidebar-wrap .it-tree-row .it-tree-expand:active:not(#\#) {
+  background: transparent;
+  box-shadow: none;
 }
 /* Explorer row actions: pin icon buttons to a compact box so Obsidian's input
    height never stretches Space/folder/list rows (embedded + docked, all platforms). */
@@ -258,34 +285,34 @@
   height: 15px;
 }
 /* Ghost text buttons (modal footers): no Obsidian chrome — label only, color on hover. */
-.inventtasks-root .it-btn-ghost,
-.inventtasks-root .it-btn-ghost-mini,
-.modal .it-btn-ghost,
-.modal .it-btn-ghost-mini,
-.it-task-modal .it-btn-ghost,
-.it-config-modal .it-btn-ghost,
-.it-filter-modal .it-btn-ghost,
-.it-export-modal .it-btn-ghost,
-.it-import-modal .it-btn-ghost,
-.it-trash-modal .it-btn-ghost,
-.it-tpl-modal .it-btn-ghost,
-.it-tpl-manager .it-btn-ghost {
-  box-shadow: none !important;
+.inventtasks-root .it-btn-ghost:not(#\#),
+.inventtasks-root .it-btn-ghost-mini:not(#\#),
+.modal .it-btn-ghost:not(#\#),
+.modal .it-btn-ghost-mini:not(#\#),
+.it-task-modal .it-btn-ghost:not(#\#),
+.it-config-modal .it-btn-ghost:not(#\#),
+.it-filter-modal .it-btn-ghost:not(#\#),
+.it-export-modal .it-btn-ghost:not(#\#),
+.it-import-modal .it-btn-ghost:not(#\#),
+.it-trash-modal .it-btn-ghost:not(#\#),
+.it-tpl-modal .it-btn-ghost:not(#\#),
+.it-tpl-manager .it-btn-ghost:not(#\#) {
+  box-shadow: none;
 }
-.inventtasks-root .it-btn-ghost:hover,
-.inventtasks-root .it-btn-ghost-mini:hover,
-.modal .it-btn-ghost:hover,
-.modal .it-btn-ghost-mini:hover,
-.it-task-modal .it-btn-ghost:hover,
-.it-config-modal .it-btn-ghost:hover,
-.it-filter-modal .it-btn-ghost:hover,
-.it-export-modal .it-btn-ghost:hover,
-.it-import-modal .it-btn-ghost:hover,
-.it-trash-modal .it-btn-ghost:hover,
-.it-tpl-modal .it-btn-ghost:hover,
-.it-tpl-manager .it-btn-ghost:hover {
-  background: transparent !important;
-  box-shadow: none !important;
+.inventtasks-root .it-btn-ghost:hover:not(#\#),
+.inventtasks-root .it-btn-ghost-mini:hover:not(#\#),
+.modal .it-btn-ghost:hover:not(#\#),
+.modal .it-btn-ghost-mini:hover:not(#\#),
+.it-task-modal .it-btn-ghost:hover:not(#\#),
+.it-config-modal .it-btn-ghost:hover:not(#\#),
+.it-filter-modal .it-btn-ghost:hover:not(#\#),
+.it-export-modal .it-btn-ghost:hover:not(#\#),
+.it-import-modal .it-btn-ghost:hover:not(#\#),
+.it-trash-modal .it-btn-ghost:hover:not(#\#),
+.it-tpl-modal .it-btn-ghost:hover:not(#\#),
+.it-tpl-manager .it-btn-ghost:hover:not(#\#) {
+  background: transparent;
+  box-shadow: none;
 }
 /* Segmented / zoom controls — flat, no Obsidian button chrome. */
 .inventtasks-root .it-tg-zoom-btn,
@@ -295,12 +322,20 @@
 .it-config-modal .it-tri-state-btn,
 .it-filter-modal .it-tri-state-btn,
 .it-fields-customizer .it-tri-state-btn {
-  box-shadow: none !important;
   min-height: 0;
 }
-.inventtasks-root .it-btn-secondary,
-.modal .it-btn-secondary {
-  box-shadow: none !important;
+.inventtasks-root .it-tg-zoom-btn:not(#\#),
+.inventtasks-root .it-tri-state-btn:not(#\#),
+.inventtasks-root .it-cal-period-tab:not(#\#),
+.it-popover .it-tri-state-btn:not(#\#),
+.it-config-modal .it-tri-state-btn:not(#\#),
+.it-filter-modal .it-tri-state-btn:not(#\#),
+.it-fields-customizer .it-tri-state-btn:not(#\#) {
+  box-shadow: none;
+}
+.inventtasks-root .it-btn-secondary:not(#\#),
+.modal .it-btn-secondary:not(#\#) {
+  box-shadow: none;
 }
 
 /* First-connect sync bootstrap dialog: one option per row (button + hint). */
@@ -484,12 +519,12 @@
 }
 /* Beat Obsidian's `button:not(.clickable-icon)` background in the compact view
    trigger. The plain `.it-view-tab-trigger` selector is too weak there. */
-.it-topbar .it-view-tab-trigger {
-  background: color-mix(in srgb, var(--chip-color, var(--it-brand)) 12%, transparent) !important;
+.it-topbar .it-view-tab-trigger:not(#\#) {
+  background: color-mix(in srgb, var(--chip-color, var(--it-brand)) 12%, transparent);
 }
-.it-topbar .it-view-tab-trigger:hover,
-.it-topbar .it-view-tab-trigger:focus {
-  background: color-mix(in srgb, var(--chip-color, var(--it-brand)) 18%, transparent) !important;
+.it-topbar .it-view-tab-trigger:hover:not(#\#),
+.it-topbar .it-view-tab-trigger:focus:not(#\#) {
+  background: color-mix(in srgb, var(--chip-color, var(--it-brand)) 18%, transparent);
 }
 .it-view-tab-trigger .it-view-tab-icon {
   display: inline-flex;
@@ -735,9 +770,11 @@
   color: #82c8ff;
 }
 .it-sidebar-docked .it-icon-btn:hover {
-  background: transparent !important;
-  box-shadow: none !important;
   color: var(--text-normal);
+}
+.it-sidebar-docked .it-icon-btn:hover:not(#\#) {
+  background: transparent;
+  box-shadow: none;
 }
 .it-sidebar-header {
   display: flex;
@@ -1074,7 +1111,7 @@ body.inventtasks-active-text-node[style*="--inventtasks-active-color"] .it-doc-p
 }
 /* Compact "+" icon variant used for Tags / Context add buttons: a bare icon
    with no fill or border at rest — only the hover state shows a backdrop.
-   Scoped + !important so it beats the soft `.it-chip` border. */
+   Scoped and boosted (`:not(#\#)`) so it beats the soft `.it-chip` border. */
 .it-task-modal .it-chip.it-chip-add-icon,
 .it-chip.it-chip-add-icon {
   display: inline-flex;
@@ -1084,19 +1121,24 @@ body.inventtasks-active-text-node[style*="--inventtasks-active-color"] .it-doc-p
   width: 24px;
   height: 24px;
   border-radius: var(--it-radius-sm);
-  background: transparent !important;
-  border: none !important;
-  box-shadow: none !important;
   color: var(--it-text-faint);
 }
-.it-task-modal .it-chip.it-chip-add-icon:hover,
-.it-chip.it-chip-add-icon:hover {
-  background: color-mix(in srgb, var(--it-brand) 22%, transparent) !important;
-  border: 1px solid color-mix(in srgb, var(--it-brand) 55%, transparent) !important;
-  color: var(--it-brand) !important;
+.it-task-modal .it-chip.it-chip-add-icon:not(#\#),
+.it-chip.it-chip-add-icon:not(#\#) {
+  background: transparent;
+  border: none;
+  box-shadow: none;
+}
+.it-task-modal .it-chip.it-chip-add-icon:hover:not(#\#),
+.it-chip.it-chip-add-icon:hover:not(#\#) {
+  background: color-mix(in srgb, var(--it-brand) 22%, transparent);
+  border: 1px solid color-mix(in srgb, var(--it-brand) 55%, transparent);
+  color: var(--it-brand);
 }
 .it-chip.it-chip-add-icon:focus,
-.it-chip.it-chip-add-icon:focus-visible { outline: none; box-shadow: none !important; }
+.it-chip.it-chip-add-icon:focus-visible { outline: none; }
+.it-chip.it-chip-add-icon:focus:not(#\#),
+.it-chip.it-chip-add-icon:focus-visible:not(#\#) { box-shadow: none; }
 .it-chip-add-icon .svg-icon { width: 15px; height: 15px; }
 
 /* ----- Label styles tab (config modal) -----
@@ -1967,10 +2009,7 @@ body.inventtasks-active-text-node[style*="--inventtasks-active-color"] .it-doc-p
   min-width: 18px;
   padding: 0 4px;
   border-radius: var(--it-radius-sm);
-  /* !important to strip Obsidian's default button fill/border/shadow. */
-  background: transparent !important;
-  border: none !important;
-  box-shadow: none !important;
+  /* Obsidian's default button fill/border/shadow is stripped by the boosted rule below. */
   color: var(--it-text-muted);
   font-size: 15px;
   font-weight: 700;
@@ -1978,9 +2017,16 @@ body.inventtasks-active-text-node[style*="--inventtasks-active-color"] .it-doc-p
   cursor: pointer;
   flex-shrink: 0;
 }
+.it-tags-more:not(#\#) {
+  background: transparent;
+  border: none;
+  box-shadow: none;
+}
 .it-tags-more:hover {
-  background: color-mix(in srgb, var(--it-text) 14%, transparent) !important;
   color: var(--it-text);
+}
+.it-tags-more:hover:not(#\#) {
+  background: color-mix(in srgb, var(--it-text) 14%, transparent);
 }
 .it-tags-popover {
   display: flex;
@@ -1990,10 +2036,10 @@ body.inventtasks-active-text-node[style*="--inventtasks-active-color"] .it-doc-p
   max-width: 320px;
 }
 /* Chips in the overflow popover keep the same filled look as in the cell.
-   Forced (with !important) because the popover lives outside the view's
+   Boosted (`:not(#\#)`) because the popover lives outside the view's
    styling context and otherwise renders as a bare outline. */
-.it-tags-popover .it-chip-tag {
-  background: color-mix(in srgb, var(--chip-color, var(--it-text)) 20%, transparent) !important;
+.it-tags-popover .it-chip-tag:not(#\#) {
+  background: color-mix(in srgb, var(--chip-color, var(--it-text)) 20%, transparent);
 }
 
 /* Tag picker popover */
@@ -2071,9 +2117,11 @@ body.inventtasks-active-text-node[style*="--inventtasks-active-color"] .it-doc-p
 }
 .it-tag-picker-add::before { display: none; }
 .it-tag-picker-add {
-  color: var(--it-brand) !important;
   font-style: italic;
   font-weight: 400;
+}
+.it-tag-picker-add:not(#\#) {
+  color: var(--it-brand);
 }
 .it-tag-picker-empty {
   font-size: 12px;
@@ -2634,11 +2682,13 @@ body.inventtasks-active-text-node[style*="--inventtasks-active-color"] .it-doc-p
 .it-cal-recurring-toggle { flex: 0 0 auto; }
 .it-cal-recurring-toggle.is-active {
   color: var(--it-brand);
-  background: color-mix(in srgb, var(--it-brand) 16%, transparent) !important;
-  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--it-brand) 45%, transparent) !important;
 }
-.it-cal-recurring-toggle.is-active:hover {
-  background: color-mix(in srgb, var(--it-brand) 24%, transparent) !important;
+.it-cal-recurring-toggle.is-active:not(#\#) {
+  background: color-mix(in srgb, var(--it-brand) 16%, transparent);
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--it-brand) 45%, transparent);
+}
+.it-cal-recurring-toggle.is-active:hover:not(#\#) {
+  background: color-mix(in srgb, var(--it-brand) 24%, transparent);
 }
 /* Title row — type icon, optional ID prefix, then the title itself. Lays out
    horizontally and truncates the title with ellipsis so month-cell pills stay
@@ -3107,14 +3157,16 @@ button.it-table-edit-display {
   max-width: 118px;
   min-height: 0;
   height: auto;
-  border: 0 !important;
-  background: transparent !important;
-  background-color: transparent !important;
-  box-shadow: none !important;
   color: var(--it-text);
   padding: 0;
   font-family: var(--it-font-b);
   font-size: 11px;
+}
+.it-table-progress:not(#\#) {
+  border: 0;
+  background: transparent;
+  background-color: transparent;
+  box-shadow: none;
 }
 .it-table-progress-editable {
   cursor: pointer;
@@ -3122,11 +3174,15 @@ button.it-table-edit-display {
 .it-table-progress:hover,
 .it-table-progress:focus,
 .it-table-progress:active {
-  border: 0 !important;
-  background: transparent !important;
-  background-color: transparent !important;
-  box-shadow: none !important;
   outline: none;
+}
+.it-table-progress:hover:not(#\#),
+.it-table-progress:focus:not(#\#),
+.it-table-progress:active:not(#\#) {
+  border: 0;
+  background: transparent;
+  background-color: transparent;
+  box-shadow: none;
 }
 .it-table-progress-track {
   position: relative;
@@ -3157,10 +3213,6 @@ button.it-table-edit-display {
 .it-cf-rating-btn {
   appearance: none;
   -webkit-appearance: none;
-  border: 0 !important;
-  background: transparent !important;
-  background-color: transparent !important;
-  box-shadow: none !important;
   color: var(--it-text-faint);
   font-size: 13px;
   line-height: 1;
@@ -3168,6 +3220,12 @@ button.it-table-edit-display {
   cursor: pointer;
   min-width: 0;
   height: auto;
+}
+.it-cf-rating-btn:not(#\#) {
+  border: 0;
+  background: transparent;
+  background-color: transparent;
+  box-shadow: none;
 }
 .it-list-view .it-cf-rating-btn,
 .it-table .it-cf-rating-btn {
@@ -3177,32 +3235,37 @@ button.it-table-edit-display {
   font-size: 20px;
   padding: 1px 2px;
 }
-.it-cf-rating-btn:hover,
-.it-cf-rating-btn:focus,
-.it-cf-rating-btn:active {
-  border: 0 !important;
-  background: transparent !important;
-  background-color: transparent !important;
-  box-shadow: none !important;
+.it-cf-rating-btn:hover:not(#\#),
+.it-cf-rating-btn:focus:not(#\#),
+.it-cf-rating-btn:active:not(#\#) {
+  border: 0;
+  background: transparent;
+  background-color: transparent;
+  box-shadow: none;
 }
 .it-list-view .it-table-progress,
 .it-table .it-table-progress,
 .it-list-view button.it-table-progress,
 .it-table button.it-table-progress {
-  border: 0 !important;
-  background: transparent !important;
-  background-color: transparent !important;
-  box-shadow: none !important;
   min-height: 0;
 }
-.it-list-view .it-table-progress-track,
-.it-table .it-table-progress-track,
-.it-list-view .it-cf-progress-track,
-.it-table .it-cf-progress-track {
-  border: 0 !important;
-  background: transparent !important;
-  background-color: transparent !important;
-  box-shadow: none !important;
+.it-list-view .it-table-progress:not(#\#),
+.it-table .it-table-progress:not(#\#),
+.it-list-view button.it-table-progress:not(#\#),
+.it-table button.it-table-progress:not(#\#) {
+  border: 0;
+  background: transparent;
+  background-color: transparent;
+  box-shadow: none;
+}
+.it-list-view .it-table-progress-track:not(#\#),
+.it-table .it-table-progress-track:not(#\#),
+.it-list-view .it-cf-progress-track:not(#\#),
+.it-table .it-cf-progress-track:not(#\#) {
+  border: 0;
+  background: transparent;
+  background-color: transparent;
+  box-shadow: none;
 }
 .it-cf-rating-btn.is-on,
 .it-cf-rating-btn:hover {
@@ -3216,16 +3279,18 @@ button.it-table-edit-display {
   min-height: 22px;
   border: 1px solid var(--it-border);
   border-radius: var(--it-radius-sm);
-  background: transparent !important;
-  background-color: transparent !important;
   color: var(--it-text);
-  font-family: var(--it-font-b) !important;
-  font-size: 11px !important;
-  font-weight: 400 !important;
   line-height: 1.2;
   padding: 1px 4px;
   box-sizing: border-box;
   color-scheme: light dark;
+}
+.it-inline-datetime:not(#\#) {
+  background: transparent;
+  background-color: transparent;
+  font-family: var(--it-font-b);
+  font-size: 11px;
+  font-weight: 400;
 }
 .it-inline-kind-date { width: var(--it-inline-date-width); }
 .it-inline-kind-time { width: var(--it-inline-time-width); }
@@ -3292,39 +3357,49 @@ button.it-table-edit-display {
 .it-modal-datetime-pair .it-dtf-icon svg { width: 15px; height: 15px; }
 .it-inline-datetime:hover {
   border-color: var(--it-border);
-  background: transparent !important;
-  background-color: transparent !important;
+}
+.it-inline-datetime:hover:not(#\#) {
+  background: transparent;
+  background-color: transparent;
 }
 .it-inline-datetime:focus {
   border-color: var(--it-brand);
   outline: none;
-  background: transparent !important;
-  background-color: transparent !important;
   box-shadow: 0 0 0 2px color-mix(in srgb, var(--it-brand) 16%, transparent);
+}
+.it-inline-datetime:focus:not(#\#) {
+  background: transparent;
+  background-color: transparent;
 }
 .it-inline-datetime[type="date"],
 .it-inline-datetime[type="time"] {
   border: 1px solid var(--it-border);
-  background: transparent !important;
-  background-color: transparent !important;
-  font-family: var(--it-font-b) !important;
-  font-size: 11px !important;
-  font-weight: 400 !important;
+}
+.it-inline-datetime[type="date"]:not(#\#),
+.it-inline-datetime[type="time"]:not(#\#) {
+  background: transparent;
+  background-color: transparent;
+  font-family: var(--it-font-b);
+  font-size: 11px;
+  font-weight: 400;
 }
 .it-inline-datetime[type="date"]::-webkit-date-and-time-value,
 .it-inline-datetime[type="time"]::-webkit-date-and-time-value {
-  background: transparent !important;
-  font-family: var(--it-font-b) !important;
-  font-size: 11px !important;
-  font-weight: 400 !important;
   line-height: 1.2;
 }
-.it-inline-datetime[type="date"]::-webkit-datetime-edit,
-.it-inline-datetime[type="time"]::-webkit-datetime-edit {
-  background: transparent !important;
-  font-family: var(--it-font-b) !important;
-  font-size: 11px !important;
-  font-weight: 400 !important;
+.it-inline-datetime[type="date"]:not(#\#)::-webkit-date-and-time-value,
+.it-inline-datetime[type="time"]:not(#\#)::-webkit-date-and-time-value {
+  background: transparent;
+  font-family: var(--it-font-b);
+  font-size: 11px;
+  font-weight: 400;
+}
+.it-inline-datetime[type="date"]:not(#\#)::-webkit-datetime-edit,
+.it-inline-datetime[type="time"]:not(#\#)::-webkit-datetime-edit {
+  background: transparent;
+  font-family: var(--it-font-b);
+  font-size: 11px;
+  font-weight: 400;
 }
 .it-inline-datetime::-webkit-calendar-picker-indicator {
   width: 14px;
@@ -3348,25 +3423,33 @@ button.it-table-edit-display {
 }
 /* Hide the native value at rest (overlay shows it); reveal it for editing. */
 .it-dtf-host > input {
-  color: transparent !important;
-  -webkit-text-fill-color: transparent !important;
   caret-color: var(--it-text);
 }
-.it-dtf-host > input:focus {
-  color: var(--it-text) !important;
-  -webkit-text-fill-color: var(--it-text) !important;
+.it-dtf-host > input:not(#\#) {
+  color: transparent;
+  -webkit-text-fill-color: transparent;
+}
+.it-dtf-host > input:focus:not(#\#) {
+  color: var(--it-text);
+  -webkit-text-fill-color: var(--it-text);
 }
 .it-dtf-host > input::-webkit-date-and-time-value,
 .it-dtf-host > input::-webkit-datetime-edit {
-  color: transparent !important;
-  -webkit-text-fill-color: transparent !important;
   opacity: 0;
+}
+.it-dtf-host > input:not(#\#)::-webkit-date-and-time-value,
+.it-dtf-host > input:not(#\#)::-webkit-datetime-edit {
+  color: transparent;
+  -webkit-text-fill-color: transparent;
 }
 .it-dtf-host > input:focus::-webkit-date-and-time-value,
 .it-dtf-host > input:focus::-webkit-datetime-edit {
-  color: var(--it-text) !important;
-  -webkit-text-fill-color: var(--it-text) !important;
   opacity: 1;
+}
+.it-dtf-host > input:focus:not(#\#)::-webkit-date-and-time-value,
+.it-dtf-host > input:focus:not(#\#)::-webkit-datetime-edit {
+  color: var(--it-text);
+  -webkit-text-fill-color: var(--it-text);
 }
 /* Drop the native picker indicator — our leading icon replaces it. */
 .it-dtf-host > input::-webkit-calendar-picker-indicator { display: none; }
@@ -4088,10 +4171,13 @@ body.it-col-resizing { cursor: col-resize; user-select: none; }
 }
 .it-task-header-actions .it-icon-btn:focus,
 .it-task-header-actions .it-icon-btn:focus-visible {
-  background: transparent !important;
-  box-shadow: none !important;
-  outline: none !important;
   color: inherit;
+}
+.it-task-header-actions .it-icon-btn:focus:not(#\#),
+.it-task-header-actions .it-icon-btn:focus-visible:not(#\#) {
+  background: transparent;
+  box-shadow: none;
+  outline: none;
 }
 .it-task-header-actions .it-icon-btn.it-danger:hover {
   color: var(--it-danger, #e53935);
@@ -4637,17 +4723,17 @@ body.it-col-resizing { cursor: col-resize; user-select: none; }
   border-radius: 3px;
 }
 .it-cf-progress-label { font-size: 11px; color: var(--it-text); font-family: var(--it-font-b); }
-.it-list-view .it-row-meta .it-table-num,
-.it-list-view .it-row-cf-cell .it-table-num,
-.it-table .it-table-num,
-.it-table .it-cf-number,
-.it-table .it-cf-money,
-.it-table .it-cf-rating,
-.it-list-view .it-cf-number,
-.it-list-view .it-cf-money,
-.it-list-view .it-cf-rating {
-  background: transparent !important;
-  background-color: transparent !important;
+.it-list-view .it-row-meta .it-table-num:not(#\#),
+.it-list-view .it-row-cf-cell .it-table-num:not(#\#),
+.it-table .it-table-num:not(#\#),
+.it-table .it-cf-number:not(#\#),
+.it-table .it-cf-money:not(#\#),
+.it-table .it-cf-rating:not(#\#),
+.it-list-view .it-cf-number:not(#\#),
+.it-list-view .it-cf-money:not(#\#),
+.it-list-view .it-cf-rating:not(#\#) {
+  background: transparent;
+  background-color: transparent;
 }
 /* In calendar pills horizontal space is tight — shrink the bar so the
    "100%" label still fits comfortably alongside it. */
@@ -4997,20 +5083,20 @@ body.is-mobile {
 }
 
 /* --- Reveal hover-only controls (no hover on touch → otherwise unreachable). */
-.is-mobile .it-row-actions,
-.is-mobile .it-tree-actions,
-.is-mobile .it-cal-add-btn,
-.is-mobile .it-task-cover-actions,
-.is-mobile .it-subtask-remove,
-.is-mobile .it-checklist-remove,
-.is-mobile .it-doc-page-more {
-  opacity: 1 !important;
-  pointer-events: auto !important;
+.is-mobile .it-row-actions:not(#\#),
+.is-mobile .it-tree-actions:not(#\#),
+.is-mobile .it-cal-add-btn:not(#\#),
+.is-mobile .it-task-cover-actions:not(#\#),
+.is-mobile .it-subtask-remove:not(#\#),
+.is-mobile .it-checklist-remove:not(#\#),
+.is-mobile .it-doc-page-more:not(#\#) {
+  opacity: 1;
+  pointer-events: auto;
 }
 /* Favorite reorder arrows (↑/↓) are the touch alternative to drag — show them. */
-.is-mobile .it-tree-actions-reorder { display: inline-flex !important; }
+.is-mobile .it-tree-actions-reorder:not(#\#) { display: inline-flex; }
 /* The drag handle relies on HTML5 drag (doesn't work on touch) — hide it. */
-.is-mobile .it-drag-handle { display: none !important; }
+.is-mobile .it-drag-handle:not(#\#) { display: none; }
 
 /* --- Touch targets: keep dropdown / context-menu options comfortably tappable. */
 .is-mobile .it-popover-item { min-height: 40px; }
@@ -5134,7 +5220,6 @@ body.is-mobile {
 }
 .it-config-body .it-cfg-section-head h3 { margin: 0; }
 .it-config-body .it-cfg-reset-btn {
-  box-shadow: none !important;
   display: inline-flex;
   align-items: center;
   gap: 5px;
@@ -5148,6 +5233,9 @@ body.is-mobile {
   border: 1px solid var(--it-border);
   border-radius: 999px;
   cursor: pointer;
+}
+.it-config-body .it-cfg-reset-btn:not(#\#) {
+  box-shadow: none;
 }
 .it-config-body .it-cfg-reset-btn .svg-icon { width: 13px; height: 13px; }
 .it-config-body .it-cfg-reset-btn:hover:not(:disabled) {
@@ -6856,9 +6944,6 @@ body.it-col-resizing .it-tg-rail-resize {
   gap: 6px;
   flex: 0 0 auto;
   padding: 4px 8px;
-  background: transparent !important;
-  box-shadow: none !important;
-  border: none !important;
   border-radius: var(--it-radius-sm);
   color: var(--it-text-muted);
   font-family: var(--it-font-h);
@@ -6868,13 +6953,22 @@ body.it-col-resizing .it-tg-rail-resize {
   min-height: 0;
   line-height: 1;
 }
+.it-doc-tool-btn:not(#\#) {
+  background: transparent;
+  box-shadow: none;
+  border: none;
+}
 .it-doc-tool-btn:hover,
 .it-doc-tool-btn:focus,
 .it-doc-tool-btn:active {
-  background: transparent !important;
-  box-shadow: none !important;
-  border: none !important;
   color: var(--it-text);
+}
+.it-doc-tool-btn:hover:not(#\#),
+.it-doc-tool-btn:focus:not(#\#),
+.it-doc-tool-btn:active:not(#\#) {
+  background: transparent;
+  box-shadow: none;
+  border: none;
 }
 .it-doc-tool-ic { display: inline-flex; flex: 0 0 auto; }
 .it-doc-tool-ic .svg-icon { width: 16px; height: 16px; }
@@ -6937,23 +7031,23 @@ body.it-col-resizing .it-tg-rail-resize {
    ===================================================================== */
 
 /* Header controls: topbar filters/group/sort and saved-view actions. */
-.inventtasks-root .it-topbar .it-secondary-btn,
-.inventtasks-root .it-views-bar .it-chip-add,
-.inventtasks-root .it-views-bar-action {
-  background: transparent !important;
-  box-shadow: none !important;
+.inventtasks-root .it-topbar .it-secondary-btn:not(#\#),
+.inventtasks-root .it-views-bar .it-chip-add:not(#\#),
+.inventtasks-root .it-views-bar-action:not(#\#) {
+  background: transparent;
+  box-shadow: none;
 }
-.inventtasks-root .it-topbar .it-secondary-btn:hover,
-.inventtasks-root .it-topbar .it-secondary-btn:focus,
-.inventtasks-root .it-topbar .it-secondary-btn:active,
-.inventtasks-root .it-views-bar .it-chip-add:hover,
-.inventtasks-root .it-views-bar .it-chip-add:focus,
-.inventtasks-root .it-views-bar .it-chip-add:active,
-.inventtasks-root .it-views-bar-action:hover,
-.inventtasks-root .it-views-bar-action:focus,
-.inventtasks-root .it-views-bar-action:active {
-  background: transparent !important;
-  box-shadow: none !important;
+.inventtasks-root .it-topbar .it-secondary-btn:hover:not(#\#),
+.inventtasks-root .it-topbar .it-secondary-btn:focus:not(#\#),
+.inventtasks-root .it-topbar .it-secondary-btn:active:not(#\#),
+.inventtasks-root .it-views-bar .it-chip-add:hover:not(#\#),
+.inventtasks-root .it-views-bar .it-chip-add:focus:not(#\#),
+.inventtasks-root .it-views-bar .it-chip-add:active:not(#\#),
+.inventtasks-root .it-views-bar-action:hover:not(#\#),
+.inventtasks-root .it-views-bar-action:focus:not(#\#),
+.inventtasks-root .it-views-bar-action:active:not(#\#) {
+  background: transparent;
+  box-shadow: none;
 }
 .inventtasks-root .it-views-bar .it-chip-add {
   border-color: var(--it-border);
@@ -6967,94 +7061,97 @@ body.it-col-resizing .it-tg-rail-resize {
 /* Modal buttons: remove gray native fill/shadow, but keep primary/danger filled.
    IMPORTANT: do not catch .it-chip. Task field labels use the configurable chip
    background system, and must keep their original per-setting styling. */
-.modal button[class*="it-"]:not(.it-btn-primary):not(.it-btn-danger):not(.it-cover-btn):not(.it-chip),
-.it-task-modal button[class*="it-"]:not(.it-btn-primary):not(.it-btn-danger):not(.it-cover-btn):not(.it-chip),
-.it-config-modal button[class*="it-"]:not(.it-btn-primary):not(.it-btn-danger):not(.it-chip),
-.it-filter-modal button[class*="it-"]:not(.it-btn-primary):not(.it-btn-danger):not(.it-chip) {
-  background: transparent !important;
-  box-shadow: none !important;
+.modal button[class*="it-"]:not(.it-btn-primary):not(.it-btn-danger):not(.it-cover-btn):not(.it-chip):not(#\#),
+.it-task-modal button[class*="it-"]:not(.it-btn-primary):not(.it-btn-danger):not(.it-cover-btn):not(.it-chip):not(#\#),
+.it-config-modal button[class*="it-"]:not(.it-btn-primary):not(.it-btn-danger):not(.it-chip):not(#\#),
+.it-filter-modal button[class*="it-"]:not(.it-btn-primary):not(.it-btn-danger):not(.it-chip):not(#\#) {
+  background: transparent;
+  box-shadow: none;
 }
-.modal button[class*="it-"]:not(.it-btn-primary):not(.it-btn-danger):not(.it-cover-btn):not(.it-chip):hover,
-.modal button[class*="it-"]:not(.it-btn-primary):not(.it-btn-danger):not(.it-cover-btn):not(.it-chip):focus,
-.modal button[class*="it-"]:not(.it-btn-primary):not(.it-btn-danger):not(.it-cover-btn):not(.it-chip):active,
-.it-task-modal button[class*="it-"]:not(.it-btn-primary):not(.it-btn-danger):not(.it-cover-btn):not(.it-chip):hover,
-.it-task-modal button[class*="it-"]:not(.it-btn-primary):not(.it-btn-danger):not(.it-cover-btn):not(.it-chip):focus,
-.it-task-modal button[class*="it-"]:not(.it-btn-primary):not(.it-btn-danger):not(.it-cover-btn):not(.it-chip):active,
-.it-config-modal button[class*="it-"]:not(.it-btn-primary):not(.it-btn-danger):not(.it-chip):hover,
-.it-config-modal button[class*="it-"]:not(.it-btn-primary):not(.it-btn-danger):not(.it-chip):focus,
-.it-config-modal button[class*="it-"]:not(.it-btn-primary):not(.it-btn-danger):not(.it-chip):active,
-.it-filter-modal button[class*="it-"]:not(.it-btn-primary):not(.it-btn-danger):not(.it-chip):hover,
-.it-filter-modal button[class*="it-"]:not(.it-btn-primary):not(.it-btn-danger):not(.it-chip):focus,
-.it-filter-modal button[class*="it-"]:not(.it-btn-primary):not(.it-btn-danger):not(.it-chip):active {
-  background: transparent !important;
-  box-shadow: none !important;
+.modal button[class*="it-"]:not(.it-btn-primary):not(.it-btn-danger):not(.it-cover-btn):not(.it-chip):hover:not(#\#),
+.modal button[class*="it-"]:not(.it-btn-primary):not(.it-btn-danger):not(.it-cover-btn):not(.it-chip):focus:not(#\#),
+.modal button[class*="it-"]:not(.it-btn-primary):not(.it-btn-danger):not(.it-cover-btn):not(.it-chip):active:not(#\#),
+.it-task-modal button[class*="it-"]:not(.it-btn-primary):not(.it-btn-danger):not(.it-cover-btn):not(.it-chip):hover:not(#\#),
+.it-task-modal button[class*="it-"]:not(.it-btn-primary):not(.it-btn-danger):not(.it-cover-btn):not(.it-chip):focus:not(#\#),
+.it-task-modal button[class*="it-"]:not(.it-btn-primary):not(.it-btn-danger):not(.it-cover-btn):not(.it-chip):active:not(#\#),
+.it-config-modal button[class*="it-"]:not(.it-btn-primary):not(.it-btn-danger):not(.it-chip):hover:not(#\#),
+.it-config-modal button[class*="it-"]:not(.it-btn-primary):not(.it-btn-danger):not(.it-chip):focus:not(#\#),
+.it-config-modal button[class*="it-"]:not(.it-btn-primary):not(.it-btn-danger):not(.it-chip):active:not(#\#),
+.it-filter-modal button[class*="it-"]:not(.it-btn-primary):not(.it-btn-danger):not(.it-chip):hover:not(#\#),
+.it-filter-modal button[class*="it-"]:not(.it-btn-primary):not(.it-btn-danger):not(.it-chip):focus:not(#\#),
+.it-filter-modal button[class*="it-"]:not(.it-btn-primary):not(.it-btn-danger):not(.it-chip):active:not(#\#) {
+  background: transparent;
+  box-shadow: none;
 }
 
 /* Secondary/ghost controls in modals and filter builder: transparent surface. */
-.modal .it-btn-secondary,
-.modal .it-secondary-btn,
-.modal .it-btn-ghost,
-.modal .it-btn-ghost-mini,
-.it-task-modal .it-btn-secondary,
-.it-task-modal .it-secondary-btn,
-.it-task-modal .it-btn-ghost,
-.it-task-modal .it-btn-ghost-mini,
-.it-config-modal .it-btn-secondary,
-.it-config-modal .it-secondary-btn,
-.it-config-modal .it-btn-ghost,
-.it-filter-modal .it-btn-secondary,
-.it-filter-modal .it-secondary-btn,
-.it-filter-modal .it-btn-ghost {
-  background: transparent !important;
-  box-shadow: none !important;
+.modal .it-btn-secondary:not(#\#),
+.modal .it-secondary-btn:not(#\#),
+.modal .it-btn-ghost:not(#\#),
+.modal .it-btn-ghost-mini:not(#\#),
+.it-task-modal .it-btn-secondary:not(#\#),
+.it-task-modal .it-secondary-btn:not(#\#),
+.it-task-modal .it-btn-ghost:not(#\#),
+.it-task-modal .it-btn-ghost-mini:not(#\#),
+.it-config-modal .it-btn-secondary:not(#\#),
+.it-config-modal .it-secondary-btn:not(#\#),
+.it-config-modal .it-btn-ghost:not(#\#),
+.it-filter-modal .it-btn-secondary:not(#\#),
+.it-filter-modal .it-secondary-btn:not(#\#),
+.it-filter-modal .it-btn-ghost:not(#\#) {
+  background: transparent;
+  box-shadow: none;
 }
 
 /* Dropdowns/popovers/context menus: transparent rows, active state via text/accent. */
-.it-popover button,
-.it-popover .it-popover-item,
-.it-popover .it-calc-opt,
-.it-popover .it-cover-menu-item,
-.it-popover .it-cover-menu-att,
-.it-popover .it-global-customizer-row button {
-  background: transparent !important;
-  box-shadow: none !important;
+.it-popover button:not(#\#),
+.it-popover .it-popover-item:not(#\#),
+.it-popover .it-calc-opt:not(#\#),
+.it-popover .it-cover-menu-item:not(#\#),
+.it-popover .it-cover-menu-att:not(#\#),
+.it-popover .it-global-customizer-row button:not(#\#) {
+  background: transparent;
+  box-shadow: none;
 }
-.it-popover .it-popover-item:hover,
-.it-popover .it-popover-item:focus,
-.it-popover .it-calc-opt:hover,
-.it-popover .it-cover-menu-item:hover,
-.it-popover .it-cover-menu-att:hover,
-.it-popover .it-popover-item.it-ctx-item-danger:hover {
-  background: transparent !important;
-  box-shadow: none !important;
+.it-popover .it-popover-item:hover:not(#\#),
+.it-popover .it-popover-item:focus:not(#\#),
+.it-popover .it-calc-opt:hover:not(#\#),
+.it-popover .it-cover-menu-item:hover:not(#\#),
+.it-popover .it-cover-menu-att:hover:not(#\#),
+.it-popover .it-popover-item.it-ctx-item-danger:hover:not(#\#) {
+  background: transparent;
+  box-shadow: none;
 }
 .it-popover .it-popover-item.is-active,
 .it-popover .it-calc-opt.is-active {
-  background: transparent !important;
-  box-shadow: none !important;
   color: var(--it-brand);
+}
+.it-popover .it-popover-item.is-active:not(#\#),
+.it-popover .it-calc-opt.is-active:not(#\#) {
+  background: transparent;
+  box-shadow: none;
 }
 
 /* Segmented controls used inside filters/customizers/modals: no gray track/card. */
-.modal .it-tri-state,
-.it-filter-modal .it-tri-state,
-.it-config-modal .it-tri-state,
-.it-fields-customizer .it-tri-state,
-.it-config-tabs,
-.it-config-subtabs,
-.it-icon-picker-tabs {
-  background: transparent !important;
-  box-shadow: none !important;
+.modal .it-tri-state:not(#\#),
+.it-filter-modal .it-tri-state:not(#\#),
+.it-config-modal .it-tri-state:not(#\#),
+.it-fields-customizer .it-tri-state:not(#\#),
+.it-config-tabs:not(#\#),
+.it-config-subtabs:not(#\#),
+.it-icon-picker-tabs:not(#\#) {
+  background: transparent;
+  box-shadow: none;
 }
-.modal .it-tri-state-btn,
-.it-filter-modal .it-tri-state-btn,
-.it-config-modal .it-tri-state-btn,
-.it-fields-customizer .it-tri-state-btn,
-.it-config-tab,
-.it-config-subtab,
-.it-picker-tab {
-  background: transparent !important;
-  box-shadow: none !important;
+.modal .it-tri-state-btn:not(#\#),
+.it-filter-modal .it-tri-state-btn:not(#\#),
+.it-config-modal .it-tri-state-btn:not(#\#),
+.it-fields-customizer .it-tri-state-btn:not(#\#),
+.it-config-tab:not(#\#),
+.it-config-subtab:not(#\#),
+.it-picker-tab:not(#\#) {
+  background: transparent;
+  box-shadow: none;
 }
 .modal .it-tri-state-btn.is-active,
 .it-filter-modal .it-tri-state-btn.is-active,
@@ -7063,26 +7160,34 @@ body.it-col-resizing .it-tg-rail-resize {
 .it-config-tab.is-active,
 .it-config-subtab.is-active,
 .it-picker-tab.is-active {
-  background: transparent !important;
-  box-shadow: none !important;
   color: var(--it-brand);
   font-weight: 600;
 }
+.modal .it-tri-state-btn.is-active:not(#\#),
+.it-filter-modal .it-tri-state-btn.is-active:not(#\#),
+.it-config-modal .it-tri-state-btn.is-active:not(#\#),
+.it-fields-customizer .it-tri-state-btn.is-active:not(#\#),
+.it-config-tab.is-active:not(#\#),
+.it-config-subtab.is-active:not(#\#),
+.it-picker-tab.is-active:not(#\#) {
+  background: transparent;
+  box-shadow: none;
+}
 
 /* Filter field picker is a button styled as input: keep outline, no gray fill. */
-button.it-filter-fieldbtn.it-input,
-.it-filter-modal button.it-filter-fieldbtn {
-  background: transparent !important;
-  box-shadow: none !important;
+button.it-filter-fieldbtn.it-input:not(#\#),
+.it-filter-modal button.it-filter-fieldbtn:not(#\#) {
+  background: transparent;
+  box-shadow: none;
 }
 
 /* Explicitly restore task-modal field labels/chips: the modal reset above must
    never flatten configurable chip backgrounds (standard + custom fields). */
-.it-task-modal .it-chip.it-cs-bg {
-  background: color-mix(in srgb, var(--chip-color, var(--it-text)) 18%, transparent) !important;
+.it-task-modal .it-chip.it-cs-bg:not(#\#) {
+  background: color-mix(in srgb, var(--chip-color, var(--it-text)) 18%, transparent);
 }
-.it-task-modal .it-chip.it-cs-bg:hover {
-  background: color-mix(in srgb, var(--chip-color, var(--it-text)) 28%, transparent) !important;
+.it-task-modal .it-chip.it-cs-bg:hover:not(#\#) {
+  background: color-mix(in srgb, var(--chip-color, var(--it-text)) 28%, transparent);
 }
 .it-task-modal .it-chip.it-chip-tag.is-active {
   box-shadow:
@@ -7092,64 +7197,67 @@ button.it-filter-fieldbtn.it-input,
 
 /* The two primary actions called out by the user: keep them visible, but make
    them flatter and lighter than the heavy filled primary button. */
-.inventtasks-root .it-new-task-btn,
-.it-task-modal .it-add-comment-btn {
-  background: transparent !important;
-  color: var(--it-brand) !important;
-  border: 1px solid color-mix(in srgb, var(--it-brand) 55%, var(--it-border)) !important;
-  box-shadow: none !important;
+.inventtasks-root .it-new-task-btn:not(#\#),
+.it-task-modal .it-add-comment-btn:not(#\#) {
+  background: transparent;
+  color: var(--it-brand);
+  border: 1px solid color-mix(in srgb, var(--it-brand) 55%, var(--it-border));
+  box-shadow: none;
 }
-.inventtasks-root .it-new-task-btn:hover,
-.inventtasks-root .it-new-task-btn:focus,
-.inventtasks-root .it-new-task-btn:active,
-.it-task-modal .it-add-comment-btn:hover,
-.it-task-modal .it-add-comment-btn:focus,
-.it-task-modal .it-add-comment-btn:active {
-  background: color-mix(in srgb, var(--it-brand) 8%, transparent) !important;
-  color: var(--it-brand) !important;
-  border-color: var(--it-brand) !important;
-  box-shadow: none !important;
+.inventtasks-root .it-new-task-btn:hover:not(#\#),
+.inventtasks-root .it-new-task-btn:focus:not(#\#),
+.inventtasks-root .it-new-task-btn:active:not(#\#),
+.it-task-modal .it-add-comment-btn:hover:not(#\#),
+.it-task-modal .it-add-comment-btn:focus:not(#\#),
+.it-task-modal .it-add-comment-btn:active:not(#\#) {
+  background: color-mix(in srgb, var(--it-brand) 8%, transparent);
+  color: var(--it-brand);
+  border-color: var(--it-brand);
+  box-shadow: none;
 }
 
 /* Active states must stay visible. The transparent-surface override above is
    intentionally broad, so re-apply the active highlight after it. */
-.inventtasks-root .it-topbar .it-secondary-btn.is-active {
-  color: var(--it-brand) !important;
-  border-color: var(--it-brand) !important;
-  background: color-mix(in srgb, var(--it-brand) 12%, transparent) !important;
+.inventtasks-root .it-topbar .it-secondary-btn.is-active:not(#\#) {
+  color: var(--it-brand);
+  border-color: var(--it-brand);
+  background: color-mix(in srgb, var(--it-brand) 12%, transparent);
 }
-.inventtasks-root .it-topbar .it-secondary-btn.is-active:hover,
-.inventtasks-root .it-topbar .it-secondary-btn.is-active:focus,
-.inventtasks-root .it-topbar .it-secondary-btn.is-active:active {
-  color: var(--it-brand) !important;
-  border-color: var(--it-brand) !important;
-  background: color-mix(in srgb, var(--it-brand) 16%, transparent) !important;
+.inventtasks-root .it-topbar .it-secondary-btn.is-active:hover:not(#\#),
+.inventtasks-root .it-topbar .it-secondary-btn.is-active:focus:not(#\#),
+.inventtasks-root .it-topbar .it-secondary-btn.is-active:active:not(#\#) {
+  color: var(--it-brand);
+  border-color: var(--it-brand);
+  background: color-mix(in srgb, var(--it-brand) 16%, transparent);
 }
 
 /* Saved views / docs: active chip uses its own view/doc color, not gray. */
 .inventtasks-root .it-views-bar .it-view-chip.is-active,
 .inventtasks-root .it-views-bar .it-view-chip.is-active:hover {
   border-width: 2px;
-  border-color: color-mix(in srgb, var(--chip-color, var(--it-brand)) 85%, transparent) !important;
-  background: color-mix(in srgb, var(--chip-color, var(--it-brand)) 24%, transparent) !important;
-  box-shadow: none !important;
+}
+.inventtasks-root .it-views-bar .it-view-chip.is-active:not(#\#),
+.inventtasks-root .it-views-bar .it-view-chip.is-active:hover:not(#\#) {
+  border-color: color-mix(in srgb, var(--chip-color, var(--it-brand)) 85%, transparent);
+  background: color-mix(in srgb, var(--chip-color, var(--it-brand)) 24%, transparent);
+  box-shadow: none;
 }
 
 /* Dropdown/list selections (Group, Sort, Subtasks, calc menu, etc.). */
-.it-popover .it-popover-item.is-active,
-.it-popover .it-popover-item.is-active:hover,
-.it-popover .it-calc-opt.is-active,
-.it-popover .it-calc-opt.is-active:hover {
-  color: var(--it-brand) !important;
-  background: color-mix(in srgb, var(--it-brand) 13%, transparent) !important;
-  box-shadow: none !important;
+.it-popover .it-popover-item.is-active:not(#\#),
+.it-popover .it-popover-item.is-active:hover:not(#\#),
+.it-popover .it-calc-opt.is-active:not(#\#),
+.it-popover .it-calc-opt.is-active:hover:not(#\#) {
+  color: var(--it-brand);
+  background: color-mix(in srgb, var(--it-brand) 13%, transparent);
+  box-shadow: none;
 }
-.theme-dark .it-popover .it-popover-item.is-active,
-.theme-dark .it-popover .it-popover-item.is-active:hover,
-.theme-dark .it-popover .it-calc-opt.is-active,
-.theme-dark .it-popover .it-calc-opt.is-active:hover {
-  background: var(--it-accent-bg) !important;
-  color: var(--it-accent-fg) !important;
+.theme-dark .it-popover .it-popover-item.is-active:not(#\#),
+.theme-dark .it-popover .it-popover-item.is-active:hover:not(#\#),
+.theme-dark .it-popover .it-calc-opt.is-active:not(#\#),
+.theme-dark .it-popover .it-calc-opt.is-active:hover:not(#\#) {
+  background: var(--it-accent-bg);
+  color: var(--it-accent-fg);
 }
 
 /* Segmented controls inside filter/config/customizer modals. */
@@ -7160,84 +7268,100 @@ button.it-filter-fieldbtn.it-input,
 .it-config-tab.is-active,
 .it-config-subtab.is-active,
 .it-picker-tab.is-active {
-  color: var(--it-brand) !important;
-  background: color-mix(in srgb, var(--it-brand) 13%, transparent) !important;
-  box-shadow: none !important;
   font-weight: 600;
+}
+.modal .it-tri-state-btn.is-active:not(#\#),
+.it-filter-modal .it-tri-state-btn.is-active:not(#\#),
+.it-config-modal .it-tri-state-btn.is-active:not(#\#),
+.it-fields-customizer .it-tri-state-btn.is-active:not(#\#),
+.it-config-tab.is-active:not(#\#),
+.it-config-subtab.is-active:not(#\#),
+.it-picker-tab.is-active:not(#\#) {
+  color: var(--it-brand);
+  background: color-mix(in srgb, var(--it-brand) 13%, transparent);
+  box-shadow: none;
 }
 
 /* Hover still needs a visible affordance. Resting surfaces are transparent, but
    mouse-over gets a light brand tint instead of Obsidian's gray button fill. */
-.inventtasks-root .it-topbar .it-secondary-btn:hover,
-.inventtasks-root .it-topbar .it-secondary-btn:focus,
-.inventtasks-root .it-views-bar .it-chip-add:hover,
-.inventtasks-root .it-views-bar .it-chip-add:focus,
-.inventtasks-root .it-views-bar-action:hover,
-.inventtasks-root .it-views-bar-action:focus,
-.inventtasks-root .it-views-bar .it-view-chip:hover {
-  background: color-mix(in srgb, var(--it-brand) 8%, transparent) !important;
-  box-shadow: none !important;
+.inventtasks-root .it-topbar .it-secondary-btn:hover:not(#\#),
+.inventtasks-root .it-topbar .it-secondary-btn:focus:not(#\#),
+.inventtasks-root .it-views-bar .it-chip-add:hover:not(#\#),
+.inventtasks-root .it-views-bar .it-chip-add:focus:not(#\#),
+.inventtasks-root .it-views-bar-action:hover:not(#\#),
+.inventtasks-root .it-views-bar-action:focus:not(#\#),
+.inventtasks-root .it-views-bar .it-view-chip:hover:not(#\#) {
+  background: color-mix(in srgb, var(--it-brand) 8%, transparent);
+  box-shadow: none;
 }
 
 /* Calendar + Gantt/Timeline period controls. These are view toolbars, not row/card
    content: keep the modern transparent surface, but show hover + active tint. */
-.inventtasks-root .it-cal-period-tabs,
-.inventtasks-root .it-tg-zoom {
-  background: transparent !important;
-  box-shadow: none !important;
+.inventtasks-root .it-cal-period-tabs:not(#\#),
+.inventtasks-root .it-tg-zoom:not(#\#) {
+  background: transparent;
+  box-shadow: none;
 }
-.inventtasks-root .it-cal-period-tab,
-.inventtasks-root .it-tg-zoom-btn {
-  background: transparent !important;
-  box-shadow: none !important;
+.inventtasks-root .it-cal-period-tab:not(#\#),
+.inventtasks-root .it-tg-zoom-btn:not(#\#) {
+  background: transparent;
+  box-shadow: none;
 }
-.inventtasks-root .it-tg-zoom-btn {
-  border-radius: 0 !important;
+.inventtasks-root .it-tg-zoom-btn:not(#\#) {
+  border-radius: 0;
 }
-.inventtasks-root .it-tg-zoom-btn:first-child {
-  border-top-left-radius: calc(8px - 1px) !important;
-  border-bottom-left-radius: calc(8px - 1px) !important;
+.inventtasks-root .it-tg-zoom-btn:first-child:not(#\#) {
+  border-top-left-radius: calc(8px - 1px);
+  border-bottom-left-radius: calc(8px - 1px);
 }
-.inventtasks-root .it-tg-zoom-btn:last-child {
-  border-top-right-radius: calc(8px - 1px) !important;
-  border-bottom-right-radius: calc(8px - 1px) !important;
+.inventtasks-root .it-tg-zoom-btn:last-child:not(#\#) {
+  border-top-right-radius: calc(8px - 1px);
+  border-bottom-right-radius: calc(8px - 1px);
 }
-.inventtasks-root .it-cal-period-tab:hover,
-.inventtasks-root .it-cal-period-tab:focus,
-.inventtasks-root .it-tg-zoom-btn:hover,
-.inventtasks-root .it-tg-zoom-btn:focus {
-  background: color-mix(in srgb, var(--it-brand) 8%, transparent) !important;
-  color: var(--it-brand) !important;
-  box-shadow: none !important;
+.inventtasks-root .it-cal-period-tab:hover:not(#\#),
+.inventtasks-root .it-cal-period-tab:focus:not(#\#),
+.inventtasks-root .it-tg-zoom-btn:hover:not(#\#),
+.inventtasks-root .it-tg-zoom-btn:focus:not(#\#) {
+  background: color-mix(in srgb, var(--it-brand) 8%, transparent);
+  color: var(--it-brand);
+  box-shadow: none;
 }
 .inventtasks-root .it-cal-period-tab.is-active,
 .inventtasks-root .it-cal-period-tab.is-active:hover,
 .inventtasks-root .it-tg-zoom-btn.is-active,
 .inventtasks-root .it-tg-zoom-btn.is-active:hover {
-  background: color-mix(in srgb, var(--it-brand) 13%, transparent) !important;
-  color: var(--it-brand) !important;
-  box-shadow: none !important;
   font-weight: 600;
+}
+.inventtasks-root .it-cal-period-tab.is-active:not(#\#),
+.inventtasks-root .it-cal-period-tab.is-active:hover:not(#\#),
+.inventtasks-root .it-tg-zoom-btn.is-active:not(#\#),
+.inventtasks-root .it-tg-zoom-btn.is-active:hover:not(#\#) {
+  background: color-mix(in srgb, var(--it-brand) 13%, transparent);
+  color: var(--it-brand);
+  box-shadow: none;
 }
 
 /* The "Today" buttons are .it-btn-secondary in Calendar and Gantt/Timeline
    toolbars, separate from the period/zoom segmented controls above. */
 .inventtasks-root .it-cal-toolbar-nav .it-btn-secondary,
 .inventtasks-root .it-tg-toolbar-nav .it-btn-secondary {
-  background: transparent !important;
-  box-shadow: none !important;
-  border: 1px solid var(--it-border) !important;
-  color: var(--it-text-muted) !important;
   border-radius: calc(var(--it-radius-md) - 2px);
 }
-.inventtasks-root .it-cal-toolbar-nav .it-btn-secondary:hover,
-.inventtasks-root .it-cal-toolbar-nav .it-btn-secondary:focus,
-.inventtasks-root .it-tg-toolbar-nav .it-btn-secondary:hover,
-.inventtasks-root .it-tg-toolbar-nav .it-btn-secondary:focus {
-  background: color-mix(in srgb, var(--it-brand) 8%, transparent) !important;
-  border-color: color-mix(in srgb, var(--it-brand) 45%, var(--it-border)) !important;
-  color: var(--it-brand) !important;
-  box-shadow: none !important;
+.inventtasks-root .it-cal-toolbar-nav .it-btn-secondary:not(#\#),
+.inventtasks-root .it-tg-toolbar-nav .it-btn-secondary:not(#\#) {
+  background: transparent;
+  box-shadow: none;
+  border: 1px solid var(--it-border);
+  color: var(--it-text-muted);
+}
+.inventtasks-root .it-cal-toolbar-nav .it-btn-secondary:hover:not(#\#),
+.inventtasks-root .it-cal-toolbar-nav .it-btn-secondary:focus:not(#\#),
+.inventtasks-root .it-tg-toolbar-nav .it-btn-secondary:hover:not(#\#),
+.inventtasks-root .it-tg-toolbar-nav .it-btn-secondary:focus:not(#\#) {
+  background: color-mix(in srgb, var(--it-brand) 8%, transparent);
+  border-color: color-mix(in srgb, var(--it-brand) 45%, var(--it-border));
+  color: var(--it-brand);
+  box-shadow: none;
 }
 
 /* Task modal field editors: one visible control frame for built-in fields
@@ -7246,56 +7370,59 @@ button.it-filter-fieldbtn.it-input,
    reset and Obsidian/theme input chrome cannot flatten it back out. */
 .it-task-modal :is(.it-task-fields, .it-recurring-row, .it-cf-val)
   :is(input.it-input, textarea.it-input, select.it-input, input.it-mdt) {
-  background: transparent !important;
-  border: 1px solid color-mix(in srgb, var(--it-text-muted) 36%, var(--it-border)) !important;
-  border-radius: var(--it-radius-sm) !important;
-  box-shadow: none !important;
   box-sizing: border-box;
 }
 .it-task-modal :is(.it-task-fields, .it-recurring-row, .it-cf-val)
-  :is(input.it-input, textarea.it-input, select.it-input, input.it-mdt):focus {
-  background: transparent !important;
-  border-color: var(--it-brand) !important;
-  outline: none !important;
-  box-shadow: 0 0 0 2px color-mix(in srgb, var(--it-brand) 16%, transparent) !important;
+  :is(input.it-input, textarea.it-input, select.it-input, input.it-mdt):not(#\#) {
+  background: transparent;
+  border: 1px solid color-mix(in srgb, var(--it-text-muted) 36%, var(--it-border));
+  border-radius: var(--it-radius-sm);
+  box-shadow: none;
 }
-.it-task-modal :is(.it-task-fields, .it-cf-val) .it-dtf-host > :is(input.it-input, input.it-mdt) {
-  padding-left: 26px !important;
+.it-task-modal :is(.it-task-fields, .it-recurring-row, .it-cf-val)
+  :is(input.it-input, textarea.it-input, select.it-input, input.it-mdt):focus:not(#\#) {
+  background: transparent;
+  border-color: var(--it-brand);
+  outline: none;
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--it-brand) 16%, transparent);
 }
-
-.it-popover .it-popover-item:hover,
-.it-popover .it-popover-item:focus,
-.it-popover .it-calc-opt:hover,
-.it-popover .it-cover-menu-item:hover,
-.it-popover .it-cover-menu-att:hover {
-  background: var(--it-accent-hover) !important;
-  box-shadow: none !important;
+.it-task-modal :is(.it-task-fields, .it-cf-val) .it-dtf-host > :is(input.it-input, input.it-mdt):not(#\#) {
+  padding-left: 26px;
 }
 
-.modal button[class*="it-"]:not(.it-btn-primary):not(.it-btn-danger):not(.it-cover-btn):not(.it-chip):hover,
-.modal button[class*="it-"]:not(.it-btn-primary):not(.it-btn-danger):not(.it-cover-btn):not(.it-chip):focus,
-.it-task-modal button[class*="it-"]:not(.it-btn-primary):not(.it-btn-danger):not(.it-cover-btn):not(.it-chip):hover,
-.it-task-modal button[class*="it-"]:not(.it-btn-primary):not(.it-btn-danger):not(.it-cover-btn):not(.it-chip):focus,
-.it-config-modal button[class*="it-"]:not(.it-btn-primary):not(.it-btn-danger):not(.it-chip):hover,
-.it-config-modal button[class*="it-"]:not(.it-btn-primary):not(.it-btn-danger):not(.it-chip):focus,
-.it-filter-modal button[class*="it-"]:not(.it-btn-primary):not(.it-btn-danger):not(.it-chip):hover,
-.it-filter-modal button[class*="it-"]:not(.it-btn-primary):not(.it-btn-danger):not(.it-chip):focus,
-.modal .it-tri-state-btn:hover,
-.modal .it-tri-state-btn:focus,
-.it-filter-modal .it-tri-state-btn:hover,
-.it-filter-modal .it-tri-state-btn:focus,
-.it-config-modal .it-tri-state-btn:hover,
-.it-config-modal .it-tri-state-btn:focus,
-.it-fields-customizer .it-tri-state-btn:hover,
-.it-fields-customizer .it-tri-state-btn:focus,
-.it-config-tab:hover,
-.it-config-tab:focus,
-.it-config-subtab:hover,
-.it-config-subtab:focus,
-.it-picker-tab:hover,
-.it-picker-tab:focus {
-  background: color-mix(in srgb, var(--it-brand) 8%, transparent) !important;
-  box-shadow: none !important;
+.it-popover .it-popover-item:hover:not(#\#),
+.it-popover .it-popover-item:focus:not(#\#),
+.it-popover .it-calc-opt:hover:not(#\#),
+.it-popover .it-cover-menu-item:hover:not(#\#),
+.it-popover .it-cover-menu-att:hover:not(#\#) {
+  background: var(--it-accent-hover);
+  box-shadow: none;
+}
+
+.modal button[class*="it-"]:not(.it-btn-primary):not(.it-btn-danger):not(.it-cover-btn):not(.it-chip):hover:not(#\#),
+.modal button[class*="it-"]:not(.it-btn-primary):not(.it-btn-danger):not(.it-cover-btn):not(.it-chip):focus:not(#\#),
+.it-task-modal button[class*="it-"]:not(.it-btn-primary):not(.it-btn-danger):not(.it-cover-btn):not(.it-chip):hover:not(#\#),
+.it-task-modal button[class*="it-"]:not(.it-btn-primary):not(.it-btn-danger):not(.it-cover-btn):not(.it-chip):focus:not(#\#),
+.it-config-modal button[class*="it-"]:not(.it-btn-primary):not(.it-btn-danger):not(.it-chip):hover:not(#\#),
+.it-config-modal button[class*="it-"]:not(.it-btn-primary):not(.it-btn-danger):not(.it-chip):focus:not(#\#),
+.it-filter-modal button[class*="it-"]:not(.it-btn-primary):not(.it-btn-danger):not(.it-chip):hover:not(#\#),
+.it-filter-modal button[class*="it-"]:not(.it-btn-primary):not(.it-btn-danger):not(.it-chip):focus:not(#\#),
+.modal .it-tri-state-btn:hover:not(#\#),
+.modal .it-tri-state-btn:focus:not(#\#),
+.it-filter-modal .it-tri-state-btn:hover:not(#\#),
+.it-filter-modal .it-tri-state-btn:focus:not(#\#),
+.it-config-modal .it-tri-state-btn:hover:not(#\#),
+.it-config-modal .it-tri-state-btn:focus:not(#\#),
+.it-fields-customizer .it-tri-state-btn:hover:not(#\#),
+.it-fields-customizer .it-tri-state-btn:focus:not(#\#),
+.it-config-tab:hover:not(#\#),
+.it-config-tab:focus:not(#\#),
+.it-config-subtab:hover:not(#\#),
+.it-config-subtab:focus:not(#\#),
+.it-picker-tab:hover:not(#\#),
+.it-picker-tab:focus:not(#\#) {
+  background: color-mix(in srgb, var(--it-brand) 8%, transparent);
+  box-shadow: none;
 }
 
 /* ============================================================
@@ -7505,27 +7632,34 @@ button.it-filter-fieldbtn.it-input,
   gap: 6px;
   height: 30px;
   padding: 0 11px;
-  border: 1px solid var(--it-border) !important;
   border-radius: var(--it-radius-pill);
-  background: transparent !important;
   color: var(--it-text-muted);
   font-family: var(--it-font-h);
   font-size: 12.5px;
   font-weight: 500;
-  box-shadow: none !important;
   cursor: pointer;
+}
+.it-notifications-tab:not(#\#) {
+  border: 1px solid var(--it-border);
+  background: transparent;
+  box-shadow: none;
 }
 .it-notifications-tab:hover,
 .it-notifications-tab:focus {
-  background: color-mix(in srgb, var(--it-brand) 8%, transparent) !important;
-  border-color: color-mix(in srgb, var(--it-brand) 45%, transparent) !important;
   color: var(--it-brand);
-  box-shadow: none !important;
+}
+.it-notifications-tab:hover:not(#\#),
+.it-notifications-tab:focus:not(#\#) {
+  background: color-mix(in srgb, var(--it-brand) 8%, transparent);
+  border-color: color-mix(in srgb, var(--it-brand) 45%, transparent);
+  box-shadow: none;
 }
 .it-notifications-tab.is-active {
-  border-color: var(--it-brand) !important;
-  background: color-mix(in srgb, var(--it-brand) 12%, transparent) !important;
   color: var(--it-brand);
+}
+.it-notifications-tab.is-active:not(#\#) {
+  border-color: var(--it-brand);
+  background: color-mix(in srgb, var(--it-brand) 12%, transparent);
 }
 .it-notifications-tab-count {
   min-width: 18px;
@@ -7654,15 +7788,17 @@ button.it-filter-fieldbtn.it-input,
 .it-notification-history-task-link {
   min-width: 0;
   padding: 0;
-  border: 0 !important;
-  background: transparent !important;
   color: var(--text-normal);
-  box-shadow: none !important;
   text-align: left;
   overflow: hidden;
   white-space: nowrap;
   text-overflow: ellipsis;
   cursor: pointer;
+}
+.it-notification-history-task-link:not(#\#) {
+  border: 0;
+  background: transparent;
+  box-shadow: none;
 }
 .it-notification-history-task-link:hover,
 .it-notification-history-task-link:focus {
@@ -7778,29 +7914,31 @@ button.it-filter-fieldbtn.it-input,
   height: 30px;
   min-width: 30px;
   min-height: 30px;
-  padding: 0 !important;
-  border: 1px solid var(--it-border) !important;
-  border-radius: var(--it-radius-pill) !important;
-  background: transparent !important;
-  color: var(--it-text-muted) !important;
-  box-shadow: none !important;
 }
-.it-notification-icon-btn:hover,
-.it-notification-icon-btn:focus {
-  background: color-mix(in srgb, var(--it-brand) 8%, transparent) !important;
-  border-color: color-mix(in srgb, var(--it-brand) 45%, transparent) !important;
-  color: var(--it-brand) !important;
-  box-shadow: none !important;
+.it-notification-icon-btn:not(#\#) {
+  padding: 0;
+  border: 1px solid var(--it-border);
+  border-radius: var(--it-radius-pill);
+  background: transparent;
+  color: var(--it-text-muted);
+  box-shadow: none;
 }
-.it-notification-icon-btn.it-danger {
-  color: var(--it-danger, #e53935) !important;
-  border-color: color-mix(in srgb, var(--it-danger, #e53935) 32%, var(--it-border)) !important;
+.it-notification-icon-btn:hover:not(#\#),
+.it-notification-icon-btn:focus:not(#\#) {
+  background: color-mix(in srgb, var(--it-brand) 8%, transparent);
+  border-color: color-mix(in srgb, var(--it-brand) 45%, transparent);
+  color: var(--it-brand);
+  box-shadow: none;
 }
-.it-notification-icon-btn.it-danger:hover,
-.it-notification-icon-btn.it-danger:focus {
-  background: color-mix(in srgb, var(--it-danger, #e53935) 10%, transparent) !important;
-  border-color: color-mix(in srgb, var(--it-danger, #e53935) 48%, transparent) !important;
-  color: var(--it-danger, #e53935) !important;
+.it-notification-icon-btn.it-danger:not(#\#) {
+  color: var(--it-danger, #e53935);
+  border-color: color-mix(in srgb, var(--it-danger, #e53935) 32%, var(--it-border));
+}
+.it-notification-icon-btn.it-danger:hover:not(#\#),
+.it-notification-icon-btn.it-danger:focus:not(#\#) {
+  background: color-mix(in srgb, var(--it-danger, #e53935) 10%, transparent);
+  border-color: color-mix(in srgb, var(--it-danger, #e53935) 48%, transparent);
+  color: var(--it-danger, #e53935);
 }
 .it-notification-icon-btn .svg-icon {
   width: 15px;
@@ -7832,29 +7970,31 @@ button.it-filter-fieldbtn.it-input,
 .it-notification-custom-snooze input {
   min-width: 0;
 }
-.it-notification-snooze-popover button {
-  background: transparent !important;
-  border: 1px solid var(--it-border) !important;
-  border-radius: var(--it-radius-pill) !important;
-  color: var(--it-text-muted) !important;
-  box-shadow: none !important;
+.it-notification-snooze-popover button:not(#\#) {
+  background: transparent;
+  border: 1px solid var(--it-border);
+  border-radius: var(--it-radius-pill);
+  color: var(--it-text-muted);
+  box-shadow: none;
 }
-.it-notification-snooze-popover button:hover,
-.it-notification-snooze-popover button:focus {
-  background: color-mix(in srgb, var(--it-brand) 8%, transparent) !important;
-  border-color: color-mix(in srgb, var(--it-brand) 45%, transparent) !important;
-  color: var(--it-brand) !important;
-  box-shadow: none !important;
+.it-notification-snooze-popover button:hover:not(#\#),
+.it-notification-snooze-popover button:focus:not(#\#) {
+  background: color-mix(in srgb, var(--it-brand) 8%, transparent);
+  border-color: color-mix(in srgb, var(--it-brand) 45%, transparent);
+  color: var(--it-brand);
+  box-shadow: none;
 }
 .it-system-add-btn {
   justify-self: end;
-  background: transparent !important;
-  box-shadow: none !important;
 }
-.it-system-add-btn:hover,
-.it-system-add-btn:focus {
-  background: color-mix(in srgb, var(--it-brand) 8%, transparent) !important;
-  box-shadow: none !important;
+.it-system-add-btn:not(#\#) {
+  background: transparent;
+  box-shadow: none;
+}
+.it-system-add-btn:hover:not(#\#),
+.it-system-add-btn:focus:not(#\#) {
+  background: color-mix(in srgb, var(--it-brand) 8%, transparent);
+  box-shadow: none;
 }
 .it-notifications-empty {
   padding: 34px 18px;
@@ -7879,29 +8019,29 @@ button.it-filter-fieldbtn.it-input,
   justify-content: flex-start;
 }
 
-.it-global-system-btn.it-global-system-attention.is-danger {
-  background: color-mix(in srgb, #e53935 20%, transparent) !important;
-  box-shadow: inset 0 0 0 1px color-mix(in srgb, #e53935 55%, transparent) !important;
+.it-global-system-btn.it-global-system-attention.is-danger:not(#\#) {
+  background: color-mix(in srgb, #e53935 20%, transparent);
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, #e53935 55%, transparent);
 }
-.it-global-system-btn.it-global-system-attention.is-warning {
-  background: color-mix(in srgb, #f59e0b 22%, transparent) !important;
-  box-shadow: inset 0 0 0 1px color-mix(in srgb, #f59e0b 55%, transparent) !important;
+.it-global-system-btn.it-global-system-attention.is-warning:not(#\#) {
+  background: color-mix(in srgb, #f59e0b 22%, transparent);
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, #f59e0b 55%, transparent);
 }
 .it-global-system-btn.it-global-system-attention:hover {
   filter: brightness(1.05);
 }
 
-.inventtasks-root .it-tree-row.it-tree-nav-attention.is-danger,
-.inventtasks-sidebar-leaf .it-tree-row.it-tree-nav-attention.is-danger,
-.it-sidebar-docked .it-tree-row.it-tree-nav-attention.is-danger {
-  background: color-mix(in srgb, #e53935 18%, transparent) !important;
-  box-shadow: inset 3px 0 0 #e53935 !important;
+.inventtasks-root .it-tree-row.it-tree-nav-attention.is-danger:not(#\#),
+.inventtasks-sidebar-leaf .it-tree-row.it-tree-nav-attention.is-danger:not(#\#),
+.it-sidebar-docked .it-tree-row.it-tree-nav-attention.is-danger:not(#\#) {
+  background: color-mix(in srgb, #e53935 18%, transparent);
+  box-shadow: inset 3px 0 0 #e53935;
 }
-.inventtasks-root .it-tree-row.it-tree-nav-attention.is-warning,
-.inventtasks-sidebar-leaf .it-tree-row.it-tree-nav-attention.is-warning,
-.it-sidebar-docked .it-tree-row.it-tree-nav-attention.is-warning {
-  background: color-mix(in srgb, #f59e0b 20%, transparent) !important;
-  box-shadow: inset 3px 0 0 #f59e0b !important;
+.inventtasks-root .it-tree-row.it-tree-nav-attention.is-warning:not(#\#),
+.inventtasks-sidebar-leaf .it-tree-row.it-tree-nav-attention.is-warning:not(#\#),
+.it-sidebar-docked .it-tree-row.it-tree-nav-attention.is-warning:not(#\#) {
+  background: color-mix(in srgb, #f59e0b 20%, transparent);
+  box-shadow: inset 3px 0 0 #f59e0b;
 }
 .inventtasks-root .it-tree-row.it-tree-nav-attention:hover,
 .inventtasks-sidebar-leaf .it-tree-row.it-tree-nav-attention:hover,
@@ -7973,10 +8113,12 @@ button.it-filter-fieldbtn.it-input,
   font-weight: 600;
   line-height: 1.6;
   color: var(--it-brand-red);
-  text-decoration: none !important;
   white-space: nowrap;
   opacity: 0.85;
   transition: opacity 120ms ease, background 120ms ease;
+}
+.it-buy-pill:not(#\#) {
+  text-decoration: none;
 }
 .it-buy-pill:hover {
   opacity: 1;
@@ -8091,72 +8233,74 @@ button.it-filter-fieldbtn.it-input,
   margin-top: 12px;
 }
 
-/* Activation panel buttons — scoped to .it-activation-actions AND flagged
-   !important so neither Obsidian's settings-tab `button` styling nor any
-   community theme (which often style `button` with !important) can override
-   the brand fill/outline colours. */
-.it-activation-actions button {
-  padding: 9px 18px !important;
-  border-radius: var(--it-radius-md) !important;
-  font-family: var(--it-font-b) !important;
-  font-weight: 600 !important;
-  font-size: 13.5px !important;
-  cursor: pointer !important;
-  border: 1.5px solid transparent !important;
-  box-shadow: none !important;
-  transition: background 120ms ease, transform 60ms ease !important;
+/* Activation panel buttons — scoped to .it-activation-actions AND boosted
+   (`:not(#\#)`) so neither Obsidian's settings-tab `button` styling nor a
+   community theme's `button` rules can override the brand fill/outline
+   colours. */
+.it-activation-actions button:not(#\#) {
+  padding: 9px 18px;
+  border-radius: var(--it-radius-md);
+  font-family: var(--it-font-b);
+  font-weight: 600;
+  font-size: 13.5px;
+  cursor: pointer;
+  border: 1.5px solid transparent;
+  box-shadow: none;
+  transition: background 120ms ease, transform 60ms ease;
 }
 .it-activation-actions button:active { transform: translateY(1px); }
 
 /* Outlined blue — Re-Activate (active state). */
-.it-activation-actions .it-btn-outline {
-  background: transparent !important;
-  color: var(--it-brand) !important;
-  border-color: var(--it-brand) !important;
+.it-activation-actions .it-btn-outline:not(#\#) {
+  background: transparent;
+  color: var(--it-brand);
+  border-color: var(--it-brand);
 }
-.it-activation-actions .it-btn-outline:hover { background: color-mix(in srgb, var(--it-brand) 10%, transparent) !important; }
+.it-activation-actions .it-btn-outline:hover:not(#\#) { background: color-mix(in srgb, var(--it-brand) 10%, transparent); }
 
 /* Red fill — Activate (inactive state). */
-.it-activation-actions .it-btn-cta.is-red {
-  background: var(--it-brand-red) !important;
-  color: #fff !important;
-  box-shadow: var(--it-shadow-1) !important;
+.it-activation-actions .it-btn-cta.is-red:not(#\#) {
+  background: var(--it-brand-red);
+  color: #fff;
+  box-shadow: var(--it-shadow-1);
 }
-.it-activation-actions .it-btn-cta.is-red:hover { background: color-mix(in srgb, var(--it-brand-red) 88%, #000) !important; }
+.it-activation-actions .it-btn-cta.is-red:hover:not(#\#) { background: color-mix(in srgb, var(--it-brand-red) 88%, #000); }
 
 /* "Unlock Pro" — red fill with sparkle. */
 .it-activation-actions .it-pro-btn {
   display: inline-flex;
   align-items: center;
   gap: 7px;
-  background: var(--it-brand-red) !important;
-  color: #fff !important;
-  box-shadow: var(--it-shadow-1) !important;
 }
-.it-activation-actions .it-pro-btn:hover { background: color-mix(in srgb, var(--it-brand-red) 88%, #000) !important; }
+.it-activation-actions .it-pro-btn:not(#\#) {
+  background: var(--it-brand-red);
+  color: #fff;
+  box-shadow: var(--it-shadow-1);
+}
+.it-activation-actions .it-pro-btn:hover:not(#\#) { background: color-mix(in srgb, var(--it-brand-red) 88%, #000); }
 .it-pro-btn-spark { display: inline-flex; width: 14px; height: 14px; }
 .it-pro-btn-spark svg { width: 100%; height: 100%; }
 
 /* Subtle outlined — "Unlock Pro for another email" (active state, red). */
-.it-activation-actions .it-pro-btn.is-subtle {
-  background: transparent !important;
-  color: var(--it-brand-red) !important;
-  border-color: color-mix(in srgb, var(--it-brand-red) 45%, transparent) !important;
-  box-shadow: none !important;
-  font-weight: 500 !important;
+.it-activation-actions .it-pro-btn.is-subtle:not(#\#) {
+  background: transparent;
+  color: var(--it-brand-red);
+  border-color: color-mix(in srgb, var(--it-brand-red) 45%, transparent);
+  box-shadow: none;
+  font-weight: 500;
 }
-.it-activation-actions .it-pro-btn.is-subtle:hover {
-  background: color-mix(in srgb, var(--it-brand-red) 10%, transparent) !important;
-  border-color: var(--it-brand-red) !important;
+.it-activation-actions .it-pro-btn.is-subtle:hover:not(#\#) {
+  background: color-mix(in srgb, var(--it-brand-red) 10%, transparent);
+  border-color: var(--it-brand-red);
 }
 /* Blue outlined variant — "Unlock Pro for another email" (active state, blue). */
-.it-activation-actions .it-pro-btn.is-subtle.is-blue {
-  color: var(--it-brand) !important;
-  border-color: color-mix(in srgb, var(--it-brand) 45%, transparent) !important;
+.it-activation-actions .it-pro-btn.is-subtle.is-blue:not(#\#) {
+  color: var(--it-brand);
+  border-color: color-mix(in srgb, var(--it-brand) 45%, transparent);
 }
-.it-activation-actions .it-pro-btn.is-subtle.is-blue:hover {
-  background: color-mix(in srgb, var(--it-brand) 10%, transparent) !important;
-  border-color: var(--it-brand) !important;
+.it-activation-actions .it-pro-btn.is-subtle.is-blue:hover:not(#\#) {
+  background: color-mix(in srgb, var(--it-brand) 10%, transparent);
+  border-color: var(--it-brand);
 }
 .it-activation-remove { color: var(--it-text-muted); }
 .it-activation-remove:hover { color: var(--it-brand-red); }
@@ -8366,8 +8510,8 @@ body.theme-dark.it-bg-black :is(.inventtasks-root, .inventtasks-sidebar-leaf, .i
 /* ------------------------------------------------------------------------
  * Styles that used to be assigned from code (Obsidian's community-plugin
  * guidelines ask for classes instead, so themes and snippets can adjust them).
- * Each rule mirrors the inline style it replaced; !important is kept where the
- * inline value had it or had to beat a more specific rule.
+ * Each rule mirrors the inline style it replaced; where the inline value had to
+ * win (or beat a more specific rule) the rule is boosted with `:not(#\#)`.
  * --------------------------------------------------------------------- */
 
 /* Floating popovers and context menus — top/left/max-height stay dynamic. */
@@ -8382,10 +8526,10 @@ body.theme-dark.it-bg-black :is(.inventtasks-root, .inventtasks-sidebar-leaf, .i
   position: fixed; left: -9999px; bottom: 0; width: 1px; visibility: hidden;
   height: var(--it-mobile-safe-bottom, 48px);
 }
-.it-tg-rail-measure > .it-tg-measure-clone {
-  position: static !important;
-  width: max-content !important;
-  max-width: none !important;
+.it-tg-rail-measure > .it-tg-measure-clone:not(#\#) {
+  position: static;
+  width: max-content;
+  max-width: none;
 }
 
 /* Inputs and small layout bits. */
@@ -8393,7 +8537,7 @@ body.theme-dark.it-bg-black :is(.inventtasks-root, .inventtasks-sidebar-leaf, .i
 .it-input-90 { width: 90px; }
 .it-mt-4 { margin-top: 4px; }
 .it-icon-on-color { color: #fff; }
-.it-dt-icon-pad { padding-left: 20px !important; }
+.it-dt-icon-pad:not(#\#) { padding-left: 20px; }
 .it-chip.it-chip-muted { --chip-color: var(--text-muted); }
 
 /* List view grid placement. */
@@ -8415,7 +8559,7 @@ td.it-table-sentinel-cell { height: 1px; padding: 0; border: none; }
 .it-sidebar-shortcut-btn.it-shortcut-sync { color: #22C55E; }
 
 /* Settings. */
-.it-pro-btn.it-pro-btn-row { display: inline-flex !important; align-items: center !important; gap: 7px !important; }
+.it-pro-btn.it-pro-btn-row:not(#\#) { display: inline-flex; align-items: center; gap: 7px; }
 .it-setup-guide {
   margin: 4px 0 14px; border: 1px solid var(--background-modifier-border);
   border-radius: 8px; padding: 6px 12px; background: var(--background-secondary);

@@ -1,7 +1,7 @@
 {
   "id": "inventtasks",
   "name": "InventTasks",
-  "version": "1.2.4",
+  "version": "1.2.5",
   "minAppVersion": "1.11.4",
   "description": "Task management powered by Markdown files in your vault. Spaces, Lists, statuses, priorities, custom fields, multiple views.",
   "author": "InventTasks",
