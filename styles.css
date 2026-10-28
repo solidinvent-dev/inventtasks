@@ -1829,8 +1829,7 @@ body.inventtasks-active-text-node[style*="--inventtasks-active-color"] .it-doc-p
   border-bottom: 1px solid var(--it-border);
 }
 /* Edge case: empty group → col-header is the bottom of the card */
-.it-list-grid > .it-list-col-header:has(+ .it-group-header),
-.it-list-grid > .it-list-col-header:has(+ .it-list-summary.is-grand),
+.it-list-grid > .it-list-col-header.it-card-end,
 .it-list-grid > .it-list-col-header:last-child {
   border-bottom-left-radius: var(--it-radius-lg);
   border-bottom-right-radius: var(--it-radius-lg);
@@ -1838,8 +1837,7 @@ body.inventtasks-active-text-node[style*="--inventtasks-active-color"] .it-doc-p
 /* Last row of each group → bottom of the card (rounded). Also when it's the
    last row before the standalone grand-total bar (grouping without per-group
    summaries, or no grouping at all). */
-.it-list-grid > .it-row:has(+ .it-group-header),
-.it-list-grid > .it-row:has(+ .it-list-summary.is-grand),
+.it-list-grid > .it-row.it-card-end,
 .it-list-grid > .it-row:last-child {
   border-bottom-left-radius: var(--it-radius-lg);
   border-bottom-right-radius: var(--it-radius-lg);
@@ -1908,7 +1906,7 @@ body.inventtasks-active-text-node[style*="--inventtasks-active-color"] .it-doc-p
   grid-column: 1 / -1;
   grid-template-columns: subgrid;
   align-items: center;
-  column-gap: 10px;
+  gap: normal 10px;
   padding: 10px 14px;
   border-left: 1px solid var(--it-border);
   border-right: 1px solid var(--it-border);
@@ -1955,7 +1953,7 @@ body.inventtasks-active-text-node[style*="--inventtasks-active-color"] .it-doc-p
 .it-list-col-header {
   background: var(--it-bg);
   border-bottom: 1px solid var(--it-border);
-  column-gap: 10px;
+  gap: normal 10px;
   padding: 0 14px;
 }
 .it-list-col-header-cell {
@@ -3077,17 +3075,11 @@ body.inventtasks-active-text-node[style*="--inventtasks-active-color"] .it-doc-p
 .it-table-editable:hover {
   background: color-mix(in srgb, var(--it-brand) 6%, var(--it-bg-hover));
 }
-.it-table-cf:has(.it-table-num):hover,
-.it-table-cf:has(.it-cf-rating-edit):hover,
-.it-table-cf:has(.it-table-progress):hover,
-.it-table-cf:has(.it-cf-progress):hover,
-.it-table-cf:has(.it-cf-number):hover,
-.it-table-cf:has(.it-cf-money):hover {
+/* Cells holding a numeric, rating or progress widget (marked in the view code). */
+.it-table-cf.it-cf-flat-hover:hover {
   background: transparent;
 }
-.it-row-cf-cell:has(.it-cf-rating-edit):hover,
-.it-row-cf-cell:has(.it-table-progress):hover,
-.it-row-cf-cell:has(.it-cf-progress):hover {
+.it-row-cf-cell.it-cf-flat-hover:hover {
   background: transparent;
 }
 .it-table-edit-display {
@@ -5856,7 +5848,7 @@ body.is-mobile {
   gap: 6px 10px;
 }
 .it-task-picker-id {
-  font-family: var(--it-font-m, ui-monospace, monospace);
+  font-family: var(--it-font-m, monospace);
   font-size: 11px;
   color: var(--it-text-faint);
   background: var(--it-bg-card);

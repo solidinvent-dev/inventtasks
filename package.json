@@ -1,6 +1,6 @@
 {
   "name": "inventtasks",
-  "version": "1.2.5",
+  "version": "1.2.6",
   "description": "Task management powered by Markdown files in your vault. Spaces, Lists, statuses, priorities, custom fields, multiple views.",
   "private": true,
   "license": "SEE LICENSE IN LICENSE",

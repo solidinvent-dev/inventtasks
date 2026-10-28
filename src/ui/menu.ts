@@ -35,37 +35,25 @@ export function showContextMenu(e: MouseEvent, items: MenuItem[]): void {
   const doc = (e.target as Node | null)?.ownerDocument ?? activeDocument;
   const win = doc.defaultView ?? window;
 
-  const menu = doc.createElement("div");
-  menu.className = "it-popover it-ctx-menu";
-  menu.setAttribute("role", "menu");
-
-  const list = doc.createElement("div");
-  list.className = "it-popover-menu";
-  menu.appendChild(list);
+  // Built straight into the click's document; it is measured and positioned
+  // below, before the browser paints.
+  const menu = doc.body.createDiv({ cls: "it-popover it-ctx-menu", attr: { role: "menu" } });
+  const list = menu.createDiv({ cls: "it-popover-menu" });
 
   for (const item of items) {
     if (item === "separator") {
-      const sep = doc.createElement("div");
-      sep.className = "it-popover-sep";
-      list.appendChild(sep);
+      list.createDiv({ cls: "it-popover-sep" });
       continue;
     }
 
-    const btn = doc.createElement("button");
-    btn.className = "it-popover-item" + (item.danger ? " it-ctx-item-danger" : "");
-    btn.setAttribute("role", "menuitem");
-    btn.setAttribute("type", "button");
+    const btn = list.createEl("button", {
+      cls: "it-popover-item" + (item.danger ? " it-ctx-item-danger" : ""),
+      attr: { role: "menuitem", type: "button" },
+    });
 
-    if (item.icon) {
-      const iconWrap = doc.createElement("span");
-      iconWrap.className = "it-popover-icon";
-      setIcon(iconWrap, item.icon);
-      btn.appendChild(iconWrap);
-    }
+    if (item.icon) setIcon(btn.createSpan({ cls: "it-popover-icon" }), item.icon);
 
-    const labelSpan = doc.createElement("span");
-    labelSpan.textContent = item.label;
-    btn.appendChild(labelSpan);
+    btn.createSpan({ text: item.label });
 
     btn.addEventListener("mousedown", (ev) => {
       ev.stopPropagation();
@@ -74,8 +62,6 @@ export function showContextMenu(e: MouseEvent, items: MenuItem[]): void {
       dismissActiveMenu();
       item.onClick();
     });
-
-    list.appendChild(btn);
   }
 
   // Measure and position after appending to body

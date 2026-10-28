@@ -849,19 +849,17 @@ export function downloadFile(filename: string, content: BlobPart, mime: string) 
 export function printHtml(html: string) {
   const iframe = createEl("iframe");
   iframe.addClass("it-print-frame");
-  document.body.appendChild(iframe);
-  const doc = iframe.contentWindow?.document;
-  if (!doc) { iframe.remove(); return; }
-  doc.open();
-  doc.write(html);
-  doc.close();
-  const win = iframe.contentWindow;
   const go = () => {
+    const win = iframe.contentWindow;
+    if (!win) { iframe.remove(); return; }
     try { win.focus(); win.print(); } catch { /* ignore */ }
     window.setTimeout(() => iframe.remove(), 1000);
   };
-  // Give the iframe a tick to lay out before printing.
-  window.setTimeout(go, 150);
+  // srcdoc loads like a page (images included); print once it has, after a
+  // tick to lay out.
+  iframe.addEventListener("load", () => window.setTimeout(go, 150), { once: true });
+  iframe.srcdoc = html;
+  document.body.appendChild(iframe);
 }
 
 // ---------- Image handling for note exports (embed vs folder) ----------

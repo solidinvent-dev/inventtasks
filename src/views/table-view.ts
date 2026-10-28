@@ -562,7 +562,16 @@ function renderDocRelationshipLinks(td: HTMLElement, task: TaskFile, field: Cust
   if (ids.length > 3) td.createSpan({ cls: "it-chip it-chip-meta it-cf-display", text: `+${ids.length - 3}` });
 }
 
+// Numeric, rating and progress widgets carry their own hover, so their cell
+// keeps a flat background (`.it-cf-flat-hover`; stands in for a CSS :has()).
+const TABLE_FLAT_HOVER_WIDGETS = ".it-table-num, .it-cf-rating-edit, .it-table-progress, .it-cf-progress, .it-cf-number, .it-cf-money";
+
 function renderCustomFieldEditor(td: HTMLElement, task: TaskFile, field: CustomFieldDef, opts: RenderOpts) {
+  renderCustomFieldEditorContent(td, task, field, opts);
+  td.toggleClass("it-cf-flat-hover", !!td.querySelector(TABLE_FLAT_HOVER_WIDGETS));
+}
+
+function renderCustomFieldEditorContent(td: HTMLElement, task: TaskFile, field: CustomFieldDef, opts: RenderOpts) {
   const raw = task.data.custom_fields?.[field.id];
   const renderReadonly = () => {
     renderCustomFieldValue(td, field, raw, {

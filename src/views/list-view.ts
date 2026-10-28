@@ -466,7 +466,16 @@ function renderDocRelationshipLinks(cell: HTMLElement, task: TaskFile, _field: C
   if (ids.length > 3) cell.createSpan({ cls: "it-chip it-chip-meta it-cf-display", text: `+${ids.length - 3}` });
 }
 
+// Rating and progress widgets carry their own hover, so their cell keeps a
+// flat background (`.it-cf-flat-hover`; stands in for a CSS :has()).
+const LIST_FLAT_HOVER_WIDGETS = ".it-cf-rating-edit, .it-table-progress, .it-cf-progress";
+
 function renderCustomFieldEditor(cell: HTMLElement, task: TaskFile, field: CustomFieldDef, opts: RenderOpts) {
+  renderCustomFieldEditorContent(cell, task, field, opts);
+  cell.toggleClass("it-cf-flat-hover", !!cell.querySelector(LIST_FLAT_HOVER_WIDGETS));
+}
+
+function renderCustomFieldEditorContent(cell: HTMLElement, task: TaskFile, field: CustomFieldDef, opts: RenderOpts) {
   const raw = task.data.custom_fields?.[field.id];
   const renderReadonly = () => {
     renderCustomFieldValue(cell, field, raw, {
@@ -757,7 +766,7 @@ export function renderListView(opts: RenderOpts) {
   // Flatten the grouped buckets into one ordered item list. Rendering it
   // incrementally (initial screenful + lazy chunks via IntersectionObserver)
   // means a 1000+ task list paints instantly instead of building every row
-  // synchronously up front. Group-card rounding (:has(+header) / :last-child)
+  // synchronously up front. Group-card rounding (.it-card-end / :last-child)
   // keeps working because items are appended in document order.
   type ListItem =
     | { kind: "group"; bucket: GroupBucket }
@@ -786,11 +795,22 @@ export function renderListView(opts: RenderOpts) {
     opts.rerender?.();
   };
 
+  // The row or column header right before a group header or the grand total
+  // closes its card (rounded bottom corners). Items are appended in order, so
+  // the previous child is final when the next group starts; the lazy-render
+  // sentinel may sit in between and is skipped.
+  const closeCardBeforeNext = () => {
+    let prev = grid.lastElementChild;
+    if (prev?.hasClass("it-list-sentinel")) prev = prev.previousElementSibling;
+    if (prev && (prev.hasClass("it-row") || prev.hasClass("it-list-col-header"))) prev.addClass("it-card-end");
+  };
+
   let next = 0;
   const renderChunk = (count: number) => {
     const end = Math.min(items.length, next + count);
     for (; next < end; next++) {
       const it = items[next];
+      if (it.kind === "group" || it.kind === "grandsummary") closeCardBeforeNext();
       if (it.kind === "group") renderGroupHeader(grid, it.bucket, opts, cols);
       else if (it.kind === "colhead") renderColumnHeader(grid, opts, cols);
       else if (it.kind === "groupsummary") renderSummaryRow(grid, opts, cols, it.tasks, "group");

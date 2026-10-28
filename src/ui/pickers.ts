@@ -120,11 +120,8 @@ export function openColorPicker(
     nativeBtn.addEventListener("click", (e) => {
       e.preventDefault();
       e.stopPropagation();
-      const inp = nativeBtn.ownerDocument.createElement("input");
-      inp.type = "color";
+      const inp = nativeBtn.ownerDocument.body.createEl("input", { type: "color", cls: "it-hidden-color-input" });
       inp.value = isHex(current) ? current! : "#9E9E9E";
-      inp.className = "it-hidden-color-input";
-      nativeBtn.ownerDocument.body.appendChild(inp);
       inp.addEventListener("change", () => {
         onPick(inp.value);
         inp.remove();

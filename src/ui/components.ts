@@ -11,9 +11,7 @@ import { t } from "../i18n";
 // Used to keep fixed popovers / context menus clear of the system bottom bar.
 export function mobileBottomInset(doc: Document = document): number {
   if (!Platform.isMobile) return 0;
-  const probe = doc.createElement("div");
-  probe.className = "it-safe-bottom-probe";
-  doc.body.appendChild(probe);
+  const probe = doc.body.createDiv({ cls: "it-safe-bottom-probe" });
   const h = probe.getBoundingClientRect().height;
   probe.remove();
   const px = Math.round(h);
@@ -277,9 +275,7 @@ export function showPopover(target: HTMLElement, build: (root: HTMLElement) => v
   // Remove existing popovers
   doc.querySelectorAll(".it-popover").forEach((el) => el.remove());
   const rect = target.getBoundingClientRect();
-  const popover = doc.createElement("div");
-  popover.className = "it-popover it-popover-floating";
-  doc.body.appendChild(popover);
+  const popover = doc.body.createDiv({ cls: "it-popover it-popover-floating" });
   build(popover);
 
   // Cap the height to whichever side (below / above the target) has more room,
